@@ -1,0 +1,11 @@
+opencv-python==4.8.1.78
+mediapipe
+numpy>=1.23
+scipy>=1.10
+imutils>=0.5.4
+Pillow>=9.5.0
+pyrebase4>=4.7.0
+requests>=2.31.0
+
+# Optional (legacy sound):
+# playsound==1.2.2

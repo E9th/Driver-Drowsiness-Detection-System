@@ -1,13 +1,11 @@
 import cv2
 import time
-import os
 import imutils
 import numpy as np
 from PIL import Image, ImageTk
 from imutils.video import VideoStream
 from tkinter import messagebox
 import mediapipe as mp
-from core.sound import start_alarm_thread
 from core.firebase import send_data_to_firebase, send_alert_to_firebase
 from core.calculation import lip_distance
 
@@ -24,6 +22,7 @@ start_button = None
 stop_button = None
 root = None
 vs = None
+detector = None  # new reference to shared FatigueDetector
 detection_enabled = False
 camera_available = False
 yawn_start_time = None
@@ -31,24 +30,17 @@ yawn_start_time = None
 #-- Detection parameters
 EYE_AR_THRESH = 0.25
 EYE_AR_CONSEC_FRAMES = 20
-YAWN_THRESH = 15
 FIREBASE_SEND_INTERVAL = 30
 COUNTER = 0
-alarm_status = False
-alarm_status2 = False
-saying = False
+drowsy_active = False  # true while continuous drowsiness event
 eye_blink_count = 0
 yawn_count = 0
 progress_full_count = 0
 closed_eye_time = 0
 alert_triggered = False
-eyes_closed = False
 mouth_open = False
 last_backend_send_time = 0
 current_detection_data = {}
-
-#-- Path to alarm sound file
-alarm_path = "assets/Alert1.wav"
 
 #-- Mediapipe Face Mesh setup
 mp_face_mesh = mp.solutions.face_mesh
@@ -61,7 +53,7 @@ def set_gui_refs(refs):
     global video_label, start_button, stop_button, status_value_label
     global progress_bar, blink_value_label, yawn_count_value_label
     global doze_value_label, ear_value_label, yawn_value_label, root
-    global vs, camera_available
+    global vs, camera_available, detector
 
     video_label = refs["video_label"]
     start_button = refs["start_button"]
@@ -77,9 +69,11 @@ def set_gui_refs(refs):
 
     vs = refs["vs"]
     camera_available = refs["camera_available"]
+    detector = refs.get("detector")  # may be None
 
 #-- Function to calculate Eye Aspect Ratio (EAR)
-def eye_aspect_ratio(landmarks, eye_indices):
+def eye_aspect_ratio(landmarks, eye_indices) -> float:
+    """Compute EAR from mediapipe landmarks subset."""
     p = [np.array([landmarks[i].x, landmarks[i].y]) for i in eye_indices]
     A = np.linalg.norm(p[1] - p[5])
     B = np.linalg.norm(p[2] - p[4])
@@ -92,18 +86,38 @@ def draw_landmark_box(frame, landmarks, indices, color=(0, 255, 0)):
     points = np.array([(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in indices])
     cv2.polylines(frame, [points], isClosed=True, color=color, thickness=1)
 
-#-- Function to update the video frame and perform detection
-def update_frame():
-    global COUNTER, alarm_status, alarm_status2, saying, eye_blink_count, yawn_count
-    global eyes_closed, mouth_open, alert_triggered, closed_eye_time, progress_full_count
-    global last_backend_send_time, current_detection_data
-    global yawn_start_time
+def _send_periodic_backend(status_message: str, data: dict) -> None:
+    """Send data and alerts to Firebase at fixed interval."""
+    global last_backend_send_time
+    if time.time() - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
+        send_data_to_firebase(data)
+        if status_message == "DROWSINESS DETECTED":
+            send_alert_to_firebase("drowsiness_detected", "medium")
+        elif status_message == "CRITICAL: EXTENDED DROWSINESS":
+            send_alert_to_firebase("critical_drowsiness", "high")
+        elif status_message == "YAWN DETECTED":
+            send_alert_to_firebase("yawn_detected", "low")
+        last_backend_send_time = time.time()
 
-    if not detection_enabled or not camera_available or not vs:
+#-- Function to update the video frame and perform detection
+def update_frame() -> None:
+    """Main per-frame update loop (scheduled with after)."""
+    global COUNTER, eye_blink_count, yawn_count
+    global drowsy_active, mouth_open, alert_triggered, closed_eye_time, progress_full_count
+    global last_backend_send_time, current_detection_data, yawn_start_time
+
+    if not detection_enabled or not camera_available:
         video_label.after(100, update_frame)
         return
     try:
-        frame = vs.read()
+        if vs:
+            frame = vs.read()
+        elif detector and getattr(detector, "cap", None) and detector.cap.isOpened():
+            ret, frm = detector.cap.read()
+            frame = frm if ret else None
+        else:
+            frame = None
+
         if frame is None:
             video_label.after(100, update_frame)
             return
@@ -131,22 +145,20 @@ def update_frame():
 
             if current_ear < EYE_AR_THRESH:
                 COUNTER += 1
+                closed_eye_time += 1
                 if COUNTER >= EYE_AR_CONSEC_FRAMES:
-                    if not alarm_status:
-                        alarm_status = True
-                        eye_blink_count += 1
-                        if os.path.exists(alarm_path):
-                            start_alarm_thread(alarm_path, alarm_flag=lambda: alarm_status)
+                    if not drowsy_active:
+                        eye_blink_count += 1  # count a drowsiness event
+                        drowsy_active = True
                     status_message = "DROWSINESS DETECTED"
                     status_color = "#F44336"
-                    closed_eye_time += 1
                     if closed_eye_time >= 50:
                         alert_triggered = True
                         status_message = "CRITICAL: EXTENDED DROWSINESS"
                         status_color = "#D32F2F"
             else:
                 COUNTER = 0
-                alarm_status = False
+                drowsy_active = False
                 closed_eye_time = 0
                 alert_triggered = False
 
@@ -157,20 +169,11 @@ def update_frame():
                     if not mouth_open:
                         yawn_count += 1
                         mouth_open = True
-                        if os.path.exists(alarm_path) and not alarm_status2 and not saying:
-                            alarm_status2 = True
-                            start_alarm_thread(
-                                alarm_path,
-                                once=True,
-                                state_flag_setter=lambda: set_saying(True),
-                                state_flag_clearer=lambda: clear_saying()
-                            )
                     if status_message == "NORMAL":
                         status_message = "YAWN DETECTED"
                         status_color = "#FF9800"
             else:
                 mouth_open = False
-                alarm_status2 = False
                 yawn_start_time = None
 
         else:
@@ -202,19 +205,15 @@ def update_frame():
             "critical_alerts": progress_full_count
         }
 
-        if time.time() - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
-            send_data_to_firebase(current_detection_data)
-            if status_message == "DROWSINESS DETECTED":
-                send_alert_to_firebase("drowsiness_detected", "medium")
-            elif status_message == "CRITICAL: EXTENDED DROWSINESS":
-                send_alert_to_firebase("critical_drowsiness", "high")
-            elif status_message == "YAWN DETECTED":
-                send_alert_to_firebase("yawn_detected", "low")
-            last_backend_send_time = time.time()
+        _send_periodic_backend(status_message, current_detection_data)
 
         cv2.putText(display_frame, f"EAR: {current_ear:.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
         cv2.putText(display_frame, f"MAR: {current_mouth_distance:.1f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-        cv2.putText(display_frame, f"Status: {status_message}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0) if status_message == "NORMAL" else (0,0,255), 2)
+        # ORIGINAL:
+        # cv2.putText(display_frame, f"Status: {status_message}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0) if status_message == "NORMAL" else (0,0,255), 2)
+        # UPDATED: add orange for YAWN DETECTED
+        status_overlay_color = (0,255,0) if status_message == "NORMAL" else ((0,165,255) if status_message == "YAWN DETECTED" else (0,0,255))
+        cv2.putText(display_frame, f"Status: {status_message}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_overlay_color, 2)
 
         img = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)))
         video_label.imgtk = img
@@ -226,18 +225,8 @@ def update_frame():
         video_label.after(100, update_frame)
 
 #-- Functions to control the GUI state and actions
-def set_saying(val):
-    global saying
-    saying = val
-
-#-- Function to clear the saying state and reset alarm status
-def clear_saying():
-    global saying, alarm_status2
-    saying = False
-    alarm_status2 = False
-
-#-- Functions to handle button actions
-def start_video():
+def start_video() -> None:
+    """Start video detection and update GUI elements."""
     global detection_enabled
     detection_enabled = True
     if start_button:
@@ -249,7 +238,8 @@ def start_video():
     update_frame()
 
 #-- Function to stop video detection and reset the state
-def stop_video():
+def stop_video() -> None:
+    """Stop video detection and update GUI elements."""
     global detection_enabled
     detection_enabled = False
     if start_button:
@@ -260,11 +250,12 @@ def stop_video():
         status_value_label.config(text="SYSTEM STOPPED", fg="#FF9800")
 
 #-- Function to reset all values and GUI components
-def reset_values():
+def reset_values() -> None:
+    """Reset all counters, flags, and GUI elements to initial state."""
     global eye_blink_count, yawn_count, progress_full_count, COUNTER
-    global closed_eye_time, alarm_status, alarm_status2, alert_triggered, eyes_closed, mouth_open
+    global closed_eye_time, alert_triggered, mouth_open, drowsy_active
     eye_blink_count = yawn_count = progress_full_count = COUNTER = closed_eye_time = 0
-    alarm_status = alarm_status2 = alert_triggered = eyes_closed = mouth_open = False
+    alert_triggered = mouth_open = drowsy_active = False
     if blink_value_label:
         blink_value_label.config(text="0")
     if yawn_count_value_label:
@@ -286,8 +277,12 @@ def exit_program():
 
 
 #-- Function to change the camera source dynamically
-def change_camera_source(source):
-    global vs, camera_available
+def change_camera_source(source: int) -> None:
+    """Change the camera source if using VideoStream; ignored when reusing detector.cap."""
+    global vs, camera_available, detection_enabled
+    if detector and getattr(detector, "cap", None) and detector.cap.isOpened():
+        messagebox.showinfo("Camera Source", "Shared detector camera in use. Change disabled.")
+        return
     if vs:
         vs.stop()
     vs = VideoStream(src=source).start()
@@ -296,11 +291,14 @@ def change_camera_source(source):
     camera_available = frame is not None
     if camera_available:
         messagebox.showinfo("Camera Source", f"Camera changed to {source}")
+        if not detection_enabled:
+            start_video()  # auto start after change
     else:
         messagebox.showerror("Camera Error", f"Failed to connect to camera {source}")
 
 #-- Function to handle the closing of the GUI window
-def on_closing():
+def on_closing() -> None:
+    """Handle window closing event."""
     global vs
     if vs:
         vs.stop()

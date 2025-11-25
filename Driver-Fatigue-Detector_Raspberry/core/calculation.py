@@ -2,8 +2,8 @@ from scipy.spatial import distance as dist
 import numpy as np
 from imutils import face_utils
 
-#--eye aspect ratio (EAR) calculation
-def eye_aspect_ratio(eye):
+# LEGACY (dlib-based) — retained for backward compatibility
+def eye_aspect_ratio(eye) -> float:
     """
     คำนวณ Eye Aspect Ratio (EAR) จากจุด landmark ของตา
     """
@@ -29,12 +29,8 @@ def final_ear(shape):
     return (ear, leftEye, rightEye)
 
 #--Mouth Aspect Ratio (MAR) calculation
-def lip_distance(landmarks):
-    """
-    คำนวณ MAR (Mouth Aspect Ratio) จาก Mediapipe landmark (normalized)
-    """
-    import numpy as np
-
+def lip_distance(landmarks) -> float:
+    """Compute normalized mouth opening (MAR-like) using mediapipe landmarks."""
     try:
         # จุดบนและล่างของปาก (กลางปาก)
         top = np.array([

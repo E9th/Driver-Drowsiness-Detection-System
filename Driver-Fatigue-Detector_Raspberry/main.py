@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import core modules
 from core.detector import FatigueDetector
-from core.backend_api import initialize_backend, cleanup_backend
+from core.firebase import initialize_firebase, cleanup_firebase
 from core.notification_handler import notification_handler, initialize_notification_handler, cleanup_notification_handler
 
 # Import GUI modules
@@ -43,11 +43,12 @@ class DriverFatigueDetectionSystem:
         try:
             print("🚀 Initializing Driver Fatigue Detection System...")
             
-            # Initialize Backend connection
-            print("� Connecting to Go Backend...")
-            if not initialize_backend():
-                print("❌ Failed to connect to backend")
+            # Initialize Firebase connection
+            print("🔥 Initializing Firebase...")
+            if not initialize_firebase(allow_offline=True):
+                print("❌ Firebase init failed (no offline fallback), aborting.")
                 return False
+            # If offline allowed, continue anyway
                 
             # Initialize notification handler
             print("🔔 Initializing notification handler...")
@@ -62,7 +63,7 @@ class DriverFatigueDetectionSystem:
                 
             # Initialize GUI
             print("🖥️ Initializing GUI...")
-            self.gui = FatigueDetectionGUI(self.detector, None)
+            self.gui = FatigueDetectionGUI(self.detector)
             
             print("✅ System initialization completed successfully!")
             return True
@@ -81,15 +82,13 @@ class DriverFatigueDetectionSystem:
             self.running = True
             print("🎯 Starting Driver Fatigue Detection System...")
             
-            # Start detector in a separate thread
-            detector_thread = threading.Thread(target=self._run_detector, daemon=True)
-            detector_thread.start()
-            self.threads.append(detector_thread)
+            # REMOVED: separate detector thread to avoid double capture usage on Raspberry Pi
+            # detector_thread = threading.Thread(target=self._run_detector, daemon=True)
+            # detector_thread.start()
+            # self.threads.append(detector_thread)
             
-            # Start GUI (this will block until GUI is closed)
             print("🖥️ Starting GUI interface...")
             self.gui.run()
-            
             return True
             
         except Exception as e:
@@ -99,23 +98,10 @@ class DriverFatigueDetectionSystem:
             self.shutdown()
     
     def _run_detector(self):
-        """Run the fatigue detector in a loop"""
-        print("👁️ Fatigue detector started...")
-        
-        while self.running:
-            try:
-                if self.detector:
-                    # Process one frame
-                    self.detector.process_frame()
-                    
-                # Small delay to prevent excessive CPU usage
-                time.sleep(0.01)  # 100 FPS max
-                
-            except Exception as e:
-                print(f"❌ Error in detector loop: {e}")
-                time.sleep(1)  # Wait before retrying
-                
-        print("👁️ Fatigue detector stopped")
+        """(Legacy) Detector loop disabled because GUI now owns capture & detection."""
+        # Intentionally left unused to prevent double camera access on Raspberry Pi
+        while False:
+            pass
     
     def shutdown(self):
         """Shutdown all system components gracefully"""
@@ -146,9 +132,9 @@ class DriverFatigueDetectionSystem:
                 if thread.is_alive():
                     thread.join(timeout=5)
                     
-            # Cleanup Backend
-            print("� Closing backend connection...")
-            cleanup_backend()
+            # Cleanup Firebase
+            print("🔥 Cleaning up Firebase...")
+            cleanup_firebase()
             
             print("✅ System shutdown completed successfully!")
             

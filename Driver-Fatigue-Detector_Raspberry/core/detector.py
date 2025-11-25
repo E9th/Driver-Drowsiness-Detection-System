@@ -1,10 +1,7 @@
 import cv2
-import dlib
 import numpy as np
-from imutils import face_utils
 from scipy.spatial import distance as dist
-import os
-import time
+import mediapipe as mp
 from datetime import datetime
 
 class FatigueDetector:
@@ -23,47 +20,23 @@ class FatigueDetector:
         self.head_tilt_counter = 0
         
         # Detection components
-        self.detector = None
-        self.predictor = None
         self.cap = None
+        self.face_mesh = None
         
-        # Face landmark indices
-        self.left_eye_start = None
-        self.left_eye_end = None
-        self.right_eye_start = None
-        self.right_eye_end = None
-        self.mouth_start = None
-        self.mouth_end = None
-        
-        # Notification system (เฉพาะรับคำสั่งจาก Admin เท่านั้น)
-        self.notification_handler = None
-        
-        print("👁️ FatigueDetector initialized (Manual mode only)")
+        print("👁️ FatigueDetector initialized (MediaPipe mode)")
     
     def initialize(self):
         """เริ่มต้นระบบตรวจจับ"""
         try:
             print("🔧 Initializing fatigue detection components...")
             
-            # โหลด face detector และ predictor
+            # Initialize MediaPipe FaceMesh
             if not self._load_detectors():
                 return False
             
             # เริ่มต้น video capture
             if not self._initialize_camera():
                 return False
-            
-            # ตั้งค่า face landmark indices
-            self._setup_landmark_indices()
-            
-            # Import notification handler (เฉพาะรับคำสั่งจาก Firebase)
-            try:
-                from .notification_handler import notification_handler
-                self.notification_handler = notification_handler
-                print("✅ Notification handler connected (Manual mode)")
-            except ImportError as e:
-                print(f"⚠️ Notification handler not available: {e}")
-                self.notification_handler = None
             
             print("✅ Fatigue detector initialized successfully")
             return True
@@ -73,35 +46,21 @@ class FatigueDetector:
             return False
     
     def _load_detectors(self):
-        """โหลด face detector และ predictor"""
+        """Initialize MediaPipe FaceMesh (replace dlib)."""
         try:
-            # โหลด Haar Cascade
-            haar_path = os.path.join(cv2.__path__[0], "data", "haarcascade_frontalface_default.xml")
-            if not os.path.exists(haar_path):
-                # ลองหา path อื่น
-                haar_path = "models/haarcascade_frontalface_default.xml"
-                if not os.path.exists(haar_path):
-                    raise FileNotFoundError(f"Haarcascade XML not found")
-            
-            self.detector = cv2.CascadeClassifier(haar_path)
-            if self.detector.empty():
-                raise ValueError("Failed to load Haar Cascade Classifier")
-            
-            # โหลด dlib predictor
-            predictor_path = "models/shape_predictor_68_face_landmarks.dat"
-            if os.path.exists(predictor_path):
-                self.predictor = dlib.shape_predictor(predictor_path)
-                print("✅ Face landmark predictor loaded")
-            else:
-                print(f"⚠️ Predictor not found at {predictor_path}")
-                print("⚠️ Face landmark detection will be limited")
-                self.predictor = None
-            
-            print("✅ Face detectors loaded successfully")
+            mp_face_mesh = mp.solutions.face_mesh
+            # static_image_mode=False, max_num_faces=2, refine_landmarks=True for iris detail (optional)
+            self.face_mesh = mp_face_mesh.FaceMesh(
+                static_image_mode=False,
+                max_num_faces=2,
+                refine_landmarks=False,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5
+            )
+            print("✅ MediaPipe FaceMesh loaded")
             return True
-            
         except Exception as e:
-            print(f"❌ Error loading detectors: {e}")
+            print(f"❌ Error loading MediaPipe FaceMesh: {e}")
             return False
     
     def _initialize_camera(self):
@@ -124,22 +83,15 @@ class FatigueDetector:
             print(f"❌ Error initializing camera: {e}")
             return False
     
-    def _setup_landmark_indices(self):
-        """ตั้งค่า indices สำหรับ facial landmarks"""
-        try:
-            if self.predictor is not None:
-                (self.left_eye_start, self.left_eye_end) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
-                (self.right_eye_start, self.right_eye_end) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"]
-                (self.mouth_start, self.mouth_end) = face_utils.FACIAL_LANDMARKS_IDXS["mouth"]
-                print("✅ Facial landmark indices set up")
-            else:
-                print("⚠️ Predictor not available, landmark detection disabled")
-                
-        except Exception as e:
-            print(f"❌ Error setting up landmark indices: {e}")
-    
+    def _compute_ratio(self, p1, p2, p3, p4, p5, p6) -> float:
+        """Generic vertical/horizontal ratio for EAR/MAR (pixel points)."""
+        A = dist.euclidean(p2, p6)
+        B = dist.euclidean(p3, p5)
+        C = dist.euclidean(p1, p4)
+        return (A + B) / (2.0 * C) if C else 0.0
+
     def process_frame(self):
-        """ประมวลผลเฟรมเดียว (เฉพาะตรวจจับ ไม่ส่งการแจ้งเตือนอัตโนมัติ)"""
+        """Read one frame and return (frame, stats dict)."""
         if not self.cap or not self.cap.isOpened():
             return None, {}
         
@@ -148,49 +100,37 @@ class FatigueDetector:
             ret, frame = self.cap.read()
             if not ret:
                 return None, {}
-            
-            # แปลงเป็น grayscale
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            # ตรวจจับใบหน้า
-            faces = self.detector.detectMultiScale(gray, 1.1, 4)
-            
-            # สถิติการตรวจจับ (เฉพาะบันทึกข้อมูล ไม่ส่งการแจ้งเตือน)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.face_mesh.process(rgb)
+            faces_landmarks = results.multi_face_landmarks or []
             detection_stats = {
                 "drowsiness": False,
                 "yawning": False,
                 "head_tilt": False,
-                "faces_detected": len(faces),
+                "faces_detected": len(faces_landmarks),
                 "timestamp": datetime.now().isoformat(),
                 "ear": 0.0,
                 "mar": 0.0,
                 "head_angle": 0.0
             }
-            
-            # ประมวลผลแต่ละใบหน้า
-            for (x, y, w, h) in faces:
-                # วาดกรอบใบหน้า
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-                
-                if self.predictor is not None:
-                    # ตรวจจับ facial landmarks
-                    rect = dlib.rectangle(x, y, x + w, y + h)
-                    shape = self.predictor(gray, rect)
-                    shape = face_utils.shape_to_np(shape)
-                    
-                    # วิเคราะห์การตรวจจับ (เฉพาะบันทึกข้อมูล)
-                    stats = self._analyze_facial_features(frame, shape)
-                    
-                    # อัพเดทสถิติ
-                    detection_stats.update(stats)
-            
+            h, w = frame.shape[:2]
+            for face_landmarks in faces_landmarks:
+                points = self._normalize_to_pixels(face_landmarks, w, h)
+                stats = self._analyze_facial_features(frame, points)
+                detection_stats.update(stats)
             return frame, detection_stats
-            
         except Exception as e:
             print(f"❌ Error processing frame: {e}")
             return None, {}
     
-    def _analyze_facial_features(self, frame, shape):
+    def _normalize_to_pixels(self, face_landmarks, w: int, h: int):
+        """Convert normalized landmarks to pixel array [(x,y), ...]."""
+        pts = []
+        for lm in face_landmarks.landmark:
+            pts.append((int(lm.x * w), int(lm.y * h)))
+        return pts
+    
+    def _analyze_facial_features(self, frame, pts):
         """วิเคราะห์ลักษณะใบหน้า (เฉพาะตรวจจับ ไม่ส่งการแจ้งเตือน)"""
         stats = {
             "drowsiness": False,
@@ -202,104 +142,89 @@ class FatigueDetector:
         }
         
         try:
-            # วิเคราะห์ดวงตา
-            left_eye = shape[self.left_eye_start:self.left_eye_end]
-            right_eye = shape[self.right_eye_start:self.right_eye_end]
+            # MediaPipe indices (approximate):
+            # Eyes (corners + vertical)
+            LEFT_EYE = {"left": 33, "right": 133, "top": 159, "top2": 158, "bottom": 145, "bottom2": 153}
+            RIGHT_EYE = {"left": 362, "right": 263, "top": 386, "top2": 387, "bottom": 374, "bottom2": 380}
+            # Mouth (corners + vertical)
+            MOUTH = {"left": 78, "right": 308, "top": 13, "bottom": 14, "top2": 82, "bottom2": 312}
             
-            left_ear = self._eye_aspect_ratio(left_eye)
-            right_ear = self._eye_aspect_ratio(right_eye)
+            # EAR (average vertical / horizontal)
+            def ear_mp(e):
+                A = (dist.euclidean(pts[e["top"]], pts[e["bottom"]]) + dist.euclidean(pts[e["top2"]], pts[e["bottom2"]])) / 2.0
+                C = dist.euclidean(pts[e["left"]], pts[e["right"]])
+                return A / C if C != 0 else 0.0
+            
+            left_ear = ear_mp(LEFT_EYE)
+            right_ear = ear_mp(RIGHT_EYE)
             ear = (left_ear + right_ear) / 2.0
             stats["ear"] = ear
             
-            # ตรวจสอบความง่วงนอน (เฉพาะแสดงผลบนหน้าจอ)
             if ear < self.EYE_AR_THRESH:
                 self.eye_counter += 1
                 if self.eye_counter >= self.EYE_AR_CONSEC_FRAMES:
                     stats["drowsiness"] = True
                     cv2.putText(frame, "DROWSINESS DETECTED!", (10, 30),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    # ไม่ส่งการแจ้งเตือนอัตโนมัติ - รอให้ Admin ส่งเอง
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 self.eye_counter = 0
             
-            # วิเคราะห์ปาก
-            mouth = shape[self.mouth_start:self.mouth_end]
-            mar = self._mouth_aspect_ratio(mouth)
-            stats["mar"] = mar
+            # MAR
+            def mar_mp(m):
+                A = (dist.euclidean(pts[m["top"]], pts[m["bottom"]]) + dist.euclidean(pts[m["top2"]], pts[m["bottom2"]])) / 2.0
+                C = dist.euclidean(pts[m["left"]], pts[m["right"]])
+                return A / C if C != 0 else 0.0
             
-            # ตรวจสอบการหาว (เฉพาะแสดงผลบนหน้าจอ)
+            mar = mar_mp(MOUTH)
+            stats["mar"] = mar
             if mar > self.MOUTH_AR_THRESH:
                 self.mouth_counter += 1
                 if self.mouth_counter >= self.MOUTH_AR_CONSEC_FRAMES:
                     stats["yawning"] = True
                     cv2.putText(frame, "YAWNING DETECTED!", (10, 60),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    # ไม่ส่งการแจ้งเตือนอัตโนมัติ - รอให้ Admin ส่งเอง
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 self.mouth_counter = 0
             
-            # วิเคราะห์การเอียงหัว
-            head_angle = self._head_tilt_angle(shape)
+            # Head tilt (compute angle between eye corners)
+            head_angle = self._head_tilt_angle_mp(pts[LEFT_EYE["left"]], pts[LEFT_EYE["right"]],
+                                                  pts[RIGHT_EYE["left"]], pts[RIGHT_EYE["right"]])
             stats["head_angle"] = head_angle
-            
             if abs(head_angle) > self.HEAD_TILT_THRESH:
                 self.head_tilt_counter += 1
                 if self.head_tilt_counter >= self.HEAD_TILT_CONSEC_FRAMES:
                     stats["head_tilt"] = True
                     cv2.putText(frame, "HEAD TILT DETECTED!", (10, 90),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    # ไม่ส่งการแจ้งเตือนอัตโนมัติ - รอให้ Admin ส่งเอง
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 self.head_tilt_counter = 0
             
-            # วาดจุด landmarks
-            self._draw_landmarks(frame, left_eye, right_eye, mouth)
-            
+            # Draw simplified contours
+            self._draw_landmarks_mp(frame, pts, LEFT_EYE, RIGHT_EYE, MOUTH)
         except Exception as e:
-            print(f"❌ Error analyzing facial features: {e}")
-        
+            print(f"❌ Error analyzing facial features (MediaPipe): {e}")
         return stats
     
-    def _eye_aspect_ratio(self, eye):
-        """คำนวณ Eye Aspect Ratio"""
-        A = dist.euclidean(eye[1], eye[5])
-        B = dist.euclidean(eye[2], eye[4])
-        C = dist.euclidean(eye[0], eye[3])
-        ear = (A + B) / (2.0 * C)
-        return ear
+    def _head_tilt_angle_mp(self, l_left, l_right, r_left, r_right) -> float:
+        """Approximate head tilt using average eye line."""
+        # Use left eye line for angle
+        dx = l_right[0] - l_left[0]
+        dy = l_right[1] - l_left[1]
+        angle = np.degrees(np.arctan2(dy, dx))
+        return angle
     
-    def _mouth_aspect_ratio(self, mouth):
-        """คำนวณ Mouth Aspect Ratio"""
-        A = dist.euclidean(mouth[2], mouth[10])
-        B = dist.euclidean(mouth[4], mouth[8])
-        C = dist.euclidean(mouth[0], mouth[6])
-        mar = (A + B) / (2.0 * C)
-        return mar
-    
-    def _head_tilt_angle(self, shape):
-        """คำนวณมุมการเอียงหัว"""
-        nose = shape[30]
-        left_eye = shape[36]
-        right_eye = shape[45]
-        
-        dx = right_eye[0] - left_eye[0]
-        dy = right_eye[1] - left_eye[1]
-        eye_angle = np.degrees(np.arctan2(dy, dx))
-        
-        dx = nose[0] - ((left_eye[0] + right_eye[0]) // 2)
-        dy = nose[1] - ((left_eye[1] + right_eye[1]) // 2)
-        head_angle = np.degrees(np.arctan2(dy, dx)) - eye_angle
-        
-        return head_angle
-    
-    def _draw_landmarks(self, frame, left_eye, right_eye, mouth):
-        """วาดจุด landmarks บนเฟรม"""
+    def _draw_landmarks_mp(self, frame, pts, L, R, M):
         try:
-            cv2.drawContours(frame, [cv2.convexHull(left_eye)], -1, (0, 255, 0), 1)
-            cv2.drawContours(frame, [cv2.convexHull(right_eye)], -1, (0, 255, 0), 1)
-            cv2.drawContours(frame, [cv2.convexHull(mouth)], -1, (0, 255, 0), 1)
+            # Eyes outline (corners + vertical points)
+            for k in [L["left"], L["right"], L["top"], L["bottom"]]:
+                cv2.circle(frame, pts[k], 2, (0, 255, 0), -1)
+            for k in [R["left"], R["right"], R["top"], R["bottom"]]:
+                cv2.circle(frame, pts[k], 2, (0, 255, 0), -1)
+            # Mouth
+            for k in [M["left"], M["right"], M["top"], M["bottom"]]:
+                cv2.circle(frame, pts[k], 2, (255, 0, 0), -1)
         except Exception as e:
-            print(f"⚠️ Error drawing landmarks: {e}")
+            print(f"⚠️ Error drawing MediaPipe landmarks: {e}")
     
     def cleanup(self):
         """ทำความสะอาดทรัพยากร"""
@@ -315,9 +240,9 @@ class FatigueDetector:
             print(f"❌ Error during cleanup: {e}")
 
 def load_detectors(predictor_path="models/shape_predictor_68_face_landmarks.dat"):
-    """Legacy function for backward compatibility"""
+    """Legacy function for backward compatibility (returns None for predictor)."""
     detector = FatigueDetector()
     if detector.initialize():
-        return detector.detector, detector.predictor
+        return detector.face_mesh, None
     else:
         return None, None

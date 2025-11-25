@@ -1,19 +1,6 @@
-import os
-import requests
-import time
 from datetime import datetime
-from tkinter import messagebox, Frame, Label
-
-# Allow disabling Firebase (dev/test) via env var `DISABLE_FIREBASE=1`
-_DISABLE_FIREBASE = os.environ.get("DISABLE_FIREBASE", "0").lower() in ("1", "true", "yes")
-
-# Try importing pyrebase; if not available, skip Firebase operations gracefully
-try:
-    import pyrebase
-    _PYREBASE_AVAILABLE = True
-except Exception:
-    pyrebase = None
-    _PYREBASE_AVAILABLE = False
+from tkinter import Frame, Label
+import pyrebase
 
 #-- Firebase Configuration
 DEVICE_ID = "device_01"
@@ -29,7 +16,6 @@ FIREBASE_CONFIG = {
 }
 
 # Device Configuration
-DEVICE_ID = "device_01"
 DRIVER_EMAIL = "driver01@gmail.com"
 DRIVER_PASSWORD = "Driver01"
 
@@ -40,19 +26,21 @@ db_handler = None
 user_token = None
 firebase_connected = False
 
+OFFLINE_MODE = False  # set True when allow_offline and auth fails
+
+__all__ = [
+    "initialize_firebase",
+    "refresh_token_if_needed",
+    "send_data_to_firebase",
+    "send_alert_to_firebase",
+    "update_device_info",
+    "cleanup_firebase",
+]
+
 #-- Firebase Functions
-def initialize_firebase():
+def initialize_firebase(allow_offline: bool = False) -> bool:
     global firebase_app, auth_handler, db_handler, user_token, firebase_connected
     try:
-        if _DISABLE_FIREBASE:
-            print("[Firebase] Firebase disabled via DISABLE_FIREBASE environment variable.")
-            firebase_connected = False
-            return False
-
-        if not _PYREBASE_AVAILABLE:
-            print("[Firebase] pyrebase not available; skipping Firebase initialization.")
-            firebase_connected = False
-            return False
         # Initialize Firebase app
         firebase_app = pyrebase.initialize_app(FIREBASE_CONFIG)
         auth_handler = firebase_app.auth()
@@ -75,7 +63,15 @@ def initialize_firebase():
     except Exception as e:
         print(f"DEBUG ERROR: Firebase authentication failed: {e}")
         firebase_connected = False
+        if allow_offline:
+            OFFLINE_MODE = True
+            print("DEBUG: Proceeding in OFFLINE MODE (Firebase disabled).")
+            return True  # allow system to continue
         return False
+
+def is_firebase_available() -> bool:
+    """Return True if Firebase is connected."""
+    return firebase_connected
 
 #-- Token Refresh Logic
 def refresh_token_if_needed(e):
@@ -93,7 +89,7 @@ def refresh_token_if_needed(e):
     return False
 
 #-- Data Sending Functions
-def send_data_to_firebase(data):
+def send_data_to_firebase(data: dict):
 
     if not firebase_connected or not db_handler or not user_token: 
         return
@@ -117,7 +113,7 @@ def send_data_to_firebase(data):
             print(f"DEBUG ERROR: Failed to send data: {e}")
 
 #-- Alert Functions
-def send_alert_to_firebase(alert_type, severity="medium"):
+def send_alert_to_firebase(alert_type: str, severity: str = "medium"):
     if not firebase_connected or not db_handler or not user_token: 
         return
     
@@ -157,3 +153,16 @@ def update_device_info(status_info_frame, text_color, card_bg, primary_color, su
         Label(device_info_frame, text=firebase_status, font=("Segoe UI", 10, "bold"), fg=firebase_color, bg=card_bg).pack(anchor="w")
     except Exception as e:
         print(f"[Firebase] Info update error: {e}")
+
+def cleanup_firebase():
+    """Release Firebase resources and reset state."""
+    global firebase_app, auth_handler, db_handler, user_token, firebase_connected
+    try:
+        firebase_app = None
+        auth_handler = None
+        db_handler = None
+        user_token = None
+        firebase_connected = False
+        print("DEBUG: Firebase cleaned up")
+    except Exception as e:
+        print(f"DEBUG ERROR: Firebase cleanup failed: {e}")
