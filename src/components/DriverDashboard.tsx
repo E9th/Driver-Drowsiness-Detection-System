@@ -88,14 +88,15 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Alert Status */}
-        {/* TODO: Update alert status based on real-time data from drowsiness detection system */}
-        <div className="mb-8">
-          <Card className="border-l-4 border-l-green-500 bg-green-50">
+        {/* --- ส่วนที่แก้ไขใหม่ (New Layout) --- */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          
+          {/* 1. การ์ดแสดงสถานะระบบ (ย้ายมาไว้ตรงนี้ และให้กินพื้นที่ 2 ใน 3 ส่วน) */}
+          <Card className="lg:col-span-2 border-l-4 border-l-green-500 bg-green-50 flex flex-col justify-center">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
                     <Eye className="w-6 h-6 text-green-600" />
                   </div>
                   <div>
@@ -103,48 +104,14 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
                     <p className="text-green-700">ไม่พบสัญญาณความเหนื่อยล้า - ขับขี่อย่างปลอดภัย</p>
                   </div>
                 </div>
-                <Badge className="bg-green-600 text-white">
+                <Badge className="bg-green-600 text-white shrink-0 ml-2">
                   สถานะ: {alertLevel}
                 </Badge>
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Stats Overview */}
-        {/* TODO: All stats should be fetched from API endpoints */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {/* TODO: Fetch safety score from ML model analysis */}
-          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-green-700">คะแนนความปลอดภัย</CardTitle>
-                <Shield className="w-5 h-5 text-green-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-green-900 mb-2">{driverStats.safetyScore}/100</div>
-              <Progress value={driverStats.safetyScore} className="h-3 bg-green-100" />
-              <div className="text-xs text-green-600 mt-2">ระดับดีเยี่ยม</div>
-            </CardContent>
-          </Card>
-
-          {/* TODO: Calculate average driving time from database records */}
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-blue-700">เวลาขับขี่เฉลี่ย</CardTitle>
-                <Clock className="w-5 h-5 text-blue-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-blue-900 mb-2">{driverStats.avgDriveTime}</div>
-              <div className="text-sm text-blue-600">ต่อวัน</div>
-              <div className="text-xs text-blue-500 mt-1">ภายในขีดจำกัดที่แนะนำ</div>
-            </CardContent>
-          </Card>
-
-          {/* TODO: Count alerts from today's database records */}
+          {/* 4. การ์ดการแจ้งเตือนวันนี้ (เหลือแค่อันนี้อันเดียวจากกลุ่ม Stats เดิม) */}
           <Card className="bg-gradient-to-br from-orange-50 to-yellow-50 border-orange-200">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -158,7 +125,9 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
               <div className="text-xs text-orange-500 mt-1">ล่าสุด: {driverStats.lastAlert}</div>
             </CardContent>
           </Card>
+
         </div>
+        {/* --- จบส่วนที่แก้ไข --- */}
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="alerts" className="space-y-6">
