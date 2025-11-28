@@ -4,7 +4,6 @@ import json
 import subprocess
 import os
 from datetime import datetime
-from .firebase import db_handler, user_token, firebase_connected
 
 class NotificationHandler:
     def __init__(self):
@@ -30,19 +29,13 @@ class NotificationHandler:
         }
         
     def start_listening(self):
-        """เริ่มฟังคำสั่งแจ้งเตือนจาก Firebase"""
+        """เริ่มฟังคำสั่งแจ้งเตือน (ตัด Firebase ออก)"""
+        # ไม่มีแหล่งคำสั่งจากระยะไกลอีกต่อไป
+        # ฟังก์ชันนี้คงไว้เพื่อความเข้ากันได้ แต่ไม่ทำงานใด ๆ
         if self.is_listening:
             return
-            
         self.is_listening = True
-        self.listener_thread = threading.Thread(target=self._listen_for_notifications, daemon=True)
-        self.listener_thread.start()
-        
-        # เริ่ม heartbeat thread
-        self.heartbeat_thread = threading.Thread(target=self._send_heartbeat, daemon=True)
-        self.heartbeat_thread.start()
-        
-        print("🔔 Notification handler started listening...")
+        print("🔔 Notification handler initialized (without Firebase)")
     
     def stop_listening(self):
         """หยุดฟังคำสั่งแจ้งเตือน"""
@@ -52,62 +45,21 @@ class NotificationHandler:
         print("🔔 Notification handler stopped listening")
     
     def _send_heartbeat(self):
-        """ส่ง heartbeat เพื่อบอกว่า device ยัง online"""
-        from .firebase import DEVICE_ID
-        
-        while self.is_listening:
-            try:
-                if firebase_connected and db_handler and user_token:
-                    heartbeat_data = {
-                        "last_seen": datetime.now().isoformat(),
-                        "status": "online",
-                        "notification_handler": "active"
-                    }
-                    
-                    db_handler.child("devices").child(DEVICE_ID).child("heartbeat").set(heartbeat_data, user_token)
-                    self.last_heartbeat = time.time()
-                    
-                time.sleep(30)  # ส่ง heartbeat ทุก 30 วินาที
-                
-            except Exception as e:
-                print(f"❌ Error sending heartbeat: {e}")
-                time.sleep(60)  # ถ้า error รอ 1 นาทีแล้วลองใหม่
+        """ตัด heartbeat ที่ส่งไป Firebase ออก"""
+        return
     
     def _listen_for_notifications(self):
-        """ฟังคำสั่งแจ้งเตือนจาก Firebase"""
-        from .firebase import DEVICE_ID
-        
-        while self.is_listening:
-            try:
-                if not firebase_connected or not db_handler or not user_token:
-                    time.sleep(5)
-                    continue
-                
-                # ดึงคำสั่งแจ้งเตือนที่ pending
-                notifications_data = db_handler.child("devices").child(DEVICE_ID).child("commands").child("notifications").get(user_token)
-                
-                if notifications_data.val():
-                    for notification_id, notification_data in notifications_data.val().items():
-                        if notification_data.get('status') == 'pending' and notification_id not in self.current_notifications:
-                            self._handle_notification_command(notification_id, notification_data)
-                
-                time.sleep(1)  # ตรวจสอบทุก 1 วินาที
-                
-            except Exception as e:
-                print(f"❌ Error listening for notifications: {e}")
-                time.sleep(5)
+        """ตัดการฟังคำสั่งจาก Firebase ออก"""
+        return
     
     def _handle_notification_command(self, notification_id, notification_data):
         """จัดการคำสั่งแจ้งเตือน"""
-        from .firebase import DEVICE_ID
-        
         try:
             self.current_notifications[notification_id] = notification_data
             
             # อัพเดทสถานะเป็น processing พร้อมเวลาที่รับคำสั่ง
             self._update_notification_status(notification_id, "processing", extra_data={
-                "received_at": datetime.now().isoformat(),
-                "device_id": DEVICE_ID
+                "received_at": datetime.now().isoformat()
             })
             
             message = notification_data.get('message', 'การแจ้งเตือนจากระบบตรวจจับความง่วงนอน')
@@ -372,29 +324,36 @@ class NotificationHandler:
             return False
     
     def _update_notification_status(self, notification_id, status, error=None, extra_data=None):
-        """อัพเดทสถานะการแจ้งเตือน"""
-        from .firebase import DEVICE_ID
-        
+        """อัพเดทสถานะการแจ้งเตือน (เฉพาะภายในเครื่อง)"""
         try:
             status_data = {
+                "notification_id": notification_id,
                 "status": status,
-                "timestamp": datetime.now().isoformat(),
-                "device_id": DEVICE_ID
+                "timestamp": datetime.now().isoformat()
             }
-            
             if error:
                 status_data["error"] = error
-                
             if extra_data:
                 status_data.update(extra_data)
-            
-            # อัพเดท status ใน Firebase
-            db_handler.child("devices").child(DEVICE_ID).child("commands").child("notifications").child(notification_id).update(status_data, user_token)
-            
-            print(f"📤 Updated notification {notification_id} status to: {status}")
-            
+
+            # เขียนสถานะลงไฟล์ชั่วคราวแทน Firebase
+            tmp_path = "/tmp/notification_status.json"
+            try:
+                if os.path.exists(tmp_path):
+                    with open(tmp_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                else:
+                    existing = []
+            except Exception:
+                existing = []
+
+            existing.append(status_data)
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump(existing, f, ensure_ascii=False, indent=2)
+
+            print(f"📤 (Local) Updated notification {notification_id} status to: {status}")
         except Exception as e:
-            print(f"❌ Error updating notification status: {e}")
+            print(f"❌ Error updating notification status locally: {e}")
 
 # Global instance
 notification_handler = NotificationHandler()
