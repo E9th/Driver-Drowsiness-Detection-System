@@ -1,6 +1,5 @@
 import tkinter as tk
-from tkinter import Frame, Label, ttk, messagebox
-from PIL import Image, ImageTk
+from tkinter import Frame, Label, ttk
 
 from core.firebase import (
     initialize_firebase,
@@ -44,30 +43,76 @@ yawn_value_label = None
 
 #-- Import necessary modules for video processing
 from imutils.video import VideoStream
-from core.detector import load_detectors
 import time
+import cv2
 
-detector, predictor = load_detectors()
+__all__ = ["FatigueDetectionGUI", "start_gui"]
 
+shared_detector = None  # new global reference to detector injected from main
 vs = None
 camera_available = False
-try:
-    vs = VideoStream(src=0).start()
-    time.sleep(2.0)
-    test_frame = vs.read()
-    camera_available = test_frame is not None
-except Exception as e:
-    print(f"[Camera] ERROR: {e}")
-    camera_available = False
 
-#-- Function to start the GUI application
-def start_gui():
+class FatigueDetectionGUI:
+    """
+    Wrapper class to integrate GUI with main system.
+    """
+    def __init__(self, detector):
+        global shared_detector
+        shared_detector = detector  # keep reference
+        self.detector = detector
+
+    def run(self):
+        start_gui()
+
+    def cleanup(self):
+        try:
+            on_closing()
+        except Exception as e:
+            print(f"[GUI] Cleanup error: {e}")
+
+def _probe_camera_indices(max_index: int = 3):
+    """Try opening camera indices sequentially if no detector capture exists."""
+    for idx in range(0, max_index + 1):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            ret, frm = cap.read()
+            if ret and frm is not None:
+                cap.release()
+                return idx
+        cap.release()
+    return None
+
+# -- Function to start the GUI application
+def start_gui() -> None:
     global root, video_label, start_button, stop_button
     global status_value_label, progress_bar
     global blink_value_label, yawn_count_value_label, doze_value_label
     global ear_value_label, yawn_value_label
+    global vs, camera_available
 
-    initialize_firebase()
+    initialize_firebase(allow_offline=True)
+
+    # Camera strategy:
+    # 1. If shared_detector and its cap valid -> reuse (no second open)
+    # 2. Else probe indices and start VideoStream
+    if shared_detector and getattr(shared_detector, "cap", None) and shared_detector.cap.isOpened():
+        camera_available = True
+        print("[Camera] Reusing detector camera (no duplicate open)")
+    else:
+        try:
+            idx = _probe_camera_indices()
+            if idx is not None:
+                vs = VideoStream(src=idx).start()
+                time.sleep(2.0)
+                test_frame = vs.read()
+                camera_available = test_frame is not None
+                print(f"[Camera] Auto-init source {idx} -> {'OK' if camera_available else 'FAILED'}")
+            else:
+                camera_available = False
+                print("[Camera] No usable camera index found (0..3)")
+        except Exception as e:
+            print(f"[Camera] ERROR auto-init: {e}")
+            camera_available = False
 
     root = tk.Tk()
     root.title("Driver Fatigue Detection System v2.0 - Professional Edition")
@@ -133,12 +178,13 @@ def start_gui():
     metrics_grid.pack(pady=(0, 5), padx=10, fill="x")
 
     # Create metrics labels
-    def create_metric(label_text, var_name, default_value, color):
-        nonlocal metrics_grid
+    def create_metric(label_text: str, var_name: str, default_value: str, color: str):
         row = Frame(metrics_grid, bg=card_bg)
         row.pack(fill="x", pady=1)
-        Label(row, text=label_text, font=("Segoe UI", 9), fg=text_color, bg=card_bg, width=8, anchor="w").pack(side="left")
-        value_label = Label(row, text=default_value, font=("Segoe UI", 10, "bold"), fg=color, bg=card_bg, width=6, anchor="e")
+        Label(row, text=label_text, font=("Segoe UI", 9), fg=text_color, bg=card_bg,
+              width=8, anchor="w").pack(side="left")
+        value_label = Label(row, text=default_value, font=("Segoe UI", 10, "bold"),
+                            fg=color, bg=card_bg, width=6, anchor="e")
         value_label.pack(side="right")
         globals()[var_name] = value_label
 
@@ -161,8 +207,10 @@ def start_gui():
     progress_bar.pack(pady=(0, 5))
 
    #-- auto start video if camera is available
-    root.after(500, start_video)
-
+    if camera_available:
+        root.after(300, start_video)
+    else:
+        status_value_label.config(text="CAMERA NOT AVAILABLE", fg="#F44336")
 
     # Footer
     footer_frame = Frame(root, bg=secondary_color, height=30)
@@ -185,39 +233,8 @@ def start_gui():
         "yawn_value_label": yawn_value_label,
         "root": root,
         "vs": vs,
-        "detector": detector,
-        "predictor": predictor,
+        "detector": shared_detector,  # pass detector
         "camera_available": camera_available,
     })
 
     root.mainloop()
-
-
-# Compatibility wrapper for older main.py expecting a FatigueDetectionGUI class
-class FatigueDetectionGUI:
-    """Lightweight wrapper exposing a `run()` and `cleanup()` API
-    so `DriverFatigueDetectionSystem` can import `FatigueDetectionGUI` and
-    call `run()` to start the GUI and `cleanup()` to attempt a graceful stop.
-    """
-    def __init__(self, detector=None, config=None):
-        self.detector = detector
-        self.config = config
-
-    def run(self):
-        # Start the GUI (this will block until the window is closed)
-        start_gui()
-
-    def cleanup(self):
-        # Try to close the tkinter root if it exists
-        try:
-            if root is not None:
-                try:
-                    root.quit()
-                except Exception:
-                    pass
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
-        except Exception:
-            pass
