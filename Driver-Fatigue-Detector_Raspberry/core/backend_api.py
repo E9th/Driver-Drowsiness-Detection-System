@@ -152,7 +152,7 @@ if __name__ == "__main__":
     
     # Test connection
     if initialize_backend():
-        print("✅ Backend connection test passed\n")
+        print("Backend connection test passed\n")
         
         # Test sending data
         test_data = {
@@ -160,15 +160,15 @@ if __name__ == "__main__":
             "drowsiness_level": "high",
             "status": "drowsy"
         }
-        print(f"📤 Sending test data: {test_data}")
+        print(f"Sending test data: {test_data}")
         send_data_to_backend(test_data)
         
         # Test sending alert
-        print("\n📤 Sending test alert...")
+        print("\nSending test alert...")
         send_alert_to_backend("drowsiness_detected", "high")
         
         # Test getting data
-        print("\n📥 Getting latest data...")
+        print("\nGetting latest data...")
         latest = get_latest_data()
         if latest:
             print(f"Latest data: {latest}")
