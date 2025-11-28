@@ -54,7 +54,7 @@ func main() {
 	log.Printf("🚀 Server starting on port %s", port)
 	log.Printf("📡 API Endpoint: http://localhost:%s", port)
 	log.Printf("💚 Health Check: http://localhost:%s/health", port)
-	
+
 	if err := router.Run(":" + port); err != nil {
 		log.Fatalf("❌ Failed to start server: %v", err)
 	}
@@ -77,6 +77,11 @@ func setupRouter() *gin.Engine {
 		AllowCredentials: true,
 	}))
 
+	// Root endpoints
+	router.GET("/", handlers.Root)
+	router.GET("/health", handlers.HealthCheck)
+	router.GET("/.well-known/appspecific/com.chrome.devtools.json", handlers.DevToolsManifest)
+
 	// API routes
 	api := router.Group("/api")
 	{
@@ -90,11 +95,11 @@ func setupRouter() *gin.Engine {
 			devices.GET("", handlers.GetAllDevices)
 
 			// Device-specific routes
-			devices.POST("/:id/data", handlers.ReceiveDeviceData)      // Python sends data here
-			devices.POST("/:id/alert", handlers.ReceiveAlert)          // Python sends alerts here
-			devices.GET("/:id/data", handlers.GetDeviceLatestData)     // Frontend gets latest data
-			devices.GET("/:id/history", handlers.GetDeviceHistory)     // Frontend gets history
-			devices.GET("/:id/alerts", handlers.GetDeviceAlerts)       // Frontend gets alerts
+			devices.POST("/:id/data", handlers.ReceiveDeviceData)  // Python sends data here
+			devices.POST("/:id/alert", handlers.ReceiveAlert)      // Python sends alerts here
+			devices.GET("/:id/data", handlers.GetDeviceLatestData) // Frontend gets latest data
+			devices.GET("/:id/history", handlers.GetDeviceHistory) // Frontend gets history
+			devices.GET("/:id/alerts", handlers.GetDeviceAlerts)   // Frontend gets alerts
 		}
 	}
 

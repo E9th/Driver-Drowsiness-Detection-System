@@ -12,6 +12,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Root returns a simple landing response
+func Root(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"app":     "Driver Drowsiness Detection API",
+		"version": "v1",
+		"endpoints": []string{
+			"/health",
+			"/api/health",
+			"/api/devices",
+			"/api/devices/:id/data",
+			"/api/devices/:id/alerts",
+			"/api/devices/:id/history",
+		},
+		"time": time.Now().Format(time.RFC3339),
+	})
+}
+
 // HealthCheck returns API health status
 func HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -21,10 +38,18 @@ func HealthCheck(c *gin.Context) {
 	})
 }
 
+// DevToolsManifest returns a minimal JSON for Chrome devtools probing
+func DevToolsManifest(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"version": 1,
+		"targets": []gin.H{},
+	})
+}
+
 // ReceiveDeviceData receives drowsiness data from Python hardware
 func ReceiveDeviceData(c *gin.Context) {
 	deviceID := c.Param("id")
-	
+
 	var payload models.DataPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
@@ -61,12 +86,12 @@ func ReceiveDeviceData(c *gin.Context) {
 		log.Printf("⚠️ Warning: Could not update device last_update: %v", err)
 	}
 
-	log.Printf("✅ Data received from device %s: drowsiness=%s, eye_closure=%.2f", 
+	log.Printf("✅ Data received from device %s: drowsiness=%s, eye_closure=%.2f",
 		deviceID, payload.DrowsinessLevel, payload.EyeClosure)
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Data received successfully",
+		"success":   true,
+		"message":   "Data received successfully",
 		"device_id": deviceID,
 	})
 }
@@ -74,7 +99,7 @@ func ReceiveDeviceData(c *gin.Context) {
 // ReceiveAlert receives alert from Python hardware
 func ReceiveAlert(c *gin.Context) {
 	deviceID := c.Param("id")
-	
+
 	var payload models.AlertPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
@@ -102,12 +127,12 @@ func ReceiveAlert(c *gin.Context) {
 		return
 	}
 
-	log.Printf("🚨 Alert received from device %s: type=%s, severity=%s", 
+	log.Printf("🚨 Alert received from device %s: type=%s, severity=%s",
 		deviceID, payload.AlertType, payload.Severity)
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Alert received successfully",
+		"success":   true,
+		"message":   "Alert received successfully",
 		"device_id": deviceID,
 	})
 }
@@ -124,7 +149,7 @@ func GetDeviceLatestData(c *gin.Context) {
 		ORDER BY timestamp DESC
 		LIMIT 1
 	`, deviceID).Scan(
-		&data.ID, &data.DeviceID, &data.EyeClosure, 
+		&data.ID, &data.DeviceID, &data.EyeClosure,
 		&data.DrowsinessLevel, &data.Status, &data.Timestamp, &data.CreatedAt,
 	)
 

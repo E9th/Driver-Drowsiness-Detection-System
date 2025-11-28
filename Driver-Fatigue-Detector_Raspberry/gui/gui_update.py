@@ -6,7 +6,7 @@ from PIL import Image, ImageTk
 from imutils.video import VideoStream
 from tkinter import messagebox
 import mediapipe as mp
-from core.firebase import send_data_to_firebase, send_alert_to_firebase
+from core.backend_api import send_data, send_alert
 from core.calculation import lip_distance
 
 #-- Global variables for GUI components and state
@@ -87,16 +87,16 @@ def draw_landmark_box(frame, landmarks, indices, color=(0, 255, 0)):
     cv2.polylines(frame, [points], isClosed=True, color=color, thickness=1)
 
 def _send_periodic_backend(status_message: str, data: dict) -> None:
-    """Send data and alerts to Firebase at fixed interval."""
+    """Send data and alerts to Go backend at fixed interval."""
     global last_backend_send_time
     if time.time() - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
-        send_data_to_firebase(data)
+        send_data(data)
         if status_message == "DROWSINESS DETECTED":
-            send_alert_to_firebase("drowsiness_detected", "medium")
+            send_alert("drowsiness_detected", "medium")
         elif status_message == "CRITICAL: EXTENDED DROWSINESS":
-            send_alert_to_firebase("critical_drowsiness", "high")
+            send_alert("critical_drowsiness", "high")
         elif status_message == "YAWN DETECTED":
-            send_alert_to_firebase("yawn_detected", "low")
+            send_alert("yawn_detected", "low")
         last_backend_send_time = time.time()
 
 #-- Function to update the video frame and perform detection

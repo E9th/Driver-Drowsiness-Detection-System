@@ -37,3 +37,12 @@ lerna-debug.log*
 
 # Vercel
 .vercel
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+venv/
+.venv/

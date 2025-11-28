@@ -1,11 +1,6 @@
 import tkinter as tk
 from tkinter import Frame, Label, ttk
 
-from core.firebase import (
-    initialize_firebase,
-    update_device_info
-)
-
 # -- Import GUI update functions
 from gui.gui_update import (
     start_video, stop_video, reset_values,

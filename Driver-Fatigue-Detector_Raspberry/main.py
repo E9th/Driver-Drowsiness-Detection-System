@@ -16,7 +16,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import core modules
 from core.detector import FatigueDetector
-from core.firebase import initialize_firebase, cleanup_firebase
 from core.notification_handler import notification_handler, initialize_notification_handler, cleanup_notification_handler
 
 # Import GUI modules
@@ -43,13 +42,6 @@ class DriverFatigueDetectionSystem:
         try:
             print("🚀 Initializing Driver Fatigue Detection System...")
             
-            # Initialize Firebase connection
-            print("🔥 Initializing Firebase...")
-            if not initialize_firebase(allow_offline=True):
-                print("❌ Firebase init failed (no offline fallback), aborting.")
-                return False
-            # If offline allowed, continue anyway
-                
             # Initialize notification handler
             print("🔔 Initializing notification handler...")
             initialize_notification_handler()
@@ -132,10 +124,6 @@ class DriverFatigueDetectionSystem:
                 if thread.is_alive():
                     thread.join(timeout=5)
                     
-            # Cleanup Firebase
-            print("🔥 Cleaning up Firebase...")
-            cleanup_firebase()
-            
             print("✅ System shutdown completed successfully!")
             
         except Exception as e:
