@@ -31,6 +31,7 @@ yawn_start_time = None
 EYE_AR_THRESH = 0.25
 EYE_AR_CONSEC_FRAMES = 20
 FIREBASE_SEND_INTERVAL = 30
+CRITICAL_DEBOUNCE_SECONDS = 10
 COUNTER = 0
 drowsy_active = False  # true while continuous drowsiness event
 eye_blink_count = 0
@@ -87,17 +88,33 @@ def draw_landmark_box(frame, landmarks, indices, color=(0, 255, 0)):
     cv2.polylines(frame, [points], isClosed=True, color=color, thickness=1)
 
 def _send_periodic_backend(status_message: str, data: dict) -> None:
-    """Send data and alerts to Go backend at fixed interval."""
+    """Send minimal data to backend at interval; send immediately on critical."""
     global last_backend_send_time
-    if time.time() - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
-        send_data(data)
+    now = time.time()
+
+    # Build minimal payload expected by backend (no ear/mouth_distance)
+    minimal = {
+        "status": status_message,
+        # optional drowsiness_level; backend maps from status if missing
+        "drowsiness_level": None,
+    }
+
+    # Immediate send for critical status with debounce (10s)
+    if status_message == "CRITICAL: EXTENDED DROWSINESS":
+        if now - last_backend_send_time >= CRITICAL_DEBOUNCE_SECONDS:
+            send_data(minimal)
+            send_alert("critical_drowsiness", "high")
+            last_backend_send_time = now
+        return
+
+    # Periodic send otherwise
+    if now - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
+        send_data(minimal)
         if status_message == "DROWSINESS DETECTED":
             send_alert("drowsiness_detected", "medium")
-        elif status_message == "CRITICAL: EXTENDED DROWSINESS":
-            send_alert("critical_drowsiness", "high")
         elif status_message == "YAWN DETECTED":
             send_alert("yawn_detected", "low")
-        last_backend_send_time = time.time()
+        last_backend_send_time = now
 
 #-- Function to update the video frame and perform detection
 def update_frame() -> None:

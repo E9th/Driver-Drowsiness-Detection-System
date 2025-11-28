@@ -65,6 +65,22 @@ class FatigueDetectionGUI:
         except Exception as e:
             print(f"[GUI] Cleanup error: {e}")
 
+def _update_device_info(container: tk.Frame, text_color: str, card_bg: str,
+                        primary_color: str, success_color: str, danger_color: str) -> None:
+    """Populate static device info/status without Firebase dependency."""
+    try:
+        Label(container, text="Device: device_01", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        Label(container, text="Backend: http://localhost:8080", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        Label(container, text="Database: PostgreSQL", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        Label(container, text="Camera: Auto", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        # Simple status badges
+        status_row = Frame(container, bg=card_bg)
+        status_row.pack(fill="x", pady=(4,0))
+        Label(status_row, text="ONLINE", font=("Segoe UI", 8, "bold"), fg=success_color, bg=card_bg).pack(side="left")
+        Label(status_row, text="SECURE", font=("Segoe UI", 8, "bold"), fg=primary_color, bg=card_bg).pack(side="left", padx=8)
+    except Exception as e:
+        print(f"[GUI] Device info init error: {e}")
+
 def _probe_camera_indices(max_index: int = 3):
     """Try opening camera indices sequentially if no detector capture exists."""
     for idx in range(0, max_index + 1):
@@ -85,7 +101,7 @@ def start_gui() -> None:
     global ear_value_label, yawn_value_label
     global vs, camera_available
 
-    initialize_firebase(allow_offline=True)
+    # Firebase initialization removed
 
     # Camera strategy:
     # 1. If shared_detector and its cap valid -> reuse (no second open)
@@ -163,7 +179,7 @@ def start_gui() -> None:
     status_value_label = Label(status_info_frame, text="WAITING", font=("Segoe UI", 10, "bold"), fg=warning_color, bg=card_bg)
     status_value_label.pack(anchor="w", pady=(2, 5))
 
-    update_device_info(status_info_frame, text_color, card_bg, primary_color, success_color, danger_color)
+    _update_device_info(status_info_frame, text_color, card_bg, primary_color, success_color, danger_color)
 
     # Metrics panel
     metrics_frame = Frame(right_frame, bg=card_bg, relief="raised", bd=2)

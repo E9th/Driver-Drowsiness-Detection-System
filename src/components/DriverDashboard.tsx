@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { 
   ArrowLeft, 
   Eye, 
@@ -19,9 +19,43 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   // State for Tabs
   const [activeTab, setActiveTab] = useState("alerts");
   
-  // TODO: Replace with API call to get real-time driver status
-  const [alertLevel] = useState("ปกติ"); 
-  const [drivingStatus] = useState("พร้อมขับขี่"); 
+  // Real-time driver status via polling
+  const [alertLevel, setAlertLevel] = useState("ปกติ"); 
+  const [drivingStatus, setDrivingStatus] = useState("พร้อมขับขี่"); 
+  const [latestStatus, setLatestStatus] = useState<{ drowsiness_level?: string; status?: string }|null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const deviceId = "device_01"; // TODO: make dynamic per user/device
+    const fetchLatest = async () => {
+      try {
+        const res = await fetch(`http://localhost:8080/api/devices/${deviceId}/data`, {
+          headers: { "Cache-Control": "no-cache" }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!mounted) return;
+        setLatestStatus({ drowsiness_level: data.drowsiness_level, status: data.status });
+        // Map backend fields to UI labels
+        const level = (data.drowsiness_level || "low").toLowerCase();
+        if (level === "high") {
+          setAlertLevel("อันตราย");
+          setDrivingStatus("ควรพักทันที");
+        } else if (level === "medium") {
+          setAlertLevel("ระวัง");
+          setDrivingStatus("เฝ้าระวัง");
+        } else {
+          setAlertLevel("ปกติ");
+          setDrivingStatus("พร้อมขับขี่");
+        }
+      } catch (e) {
+        // swallow transient errors
+      }
+    };
+    fetchLatest();
+    const timer = setInterval(fetchLatest, 5000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, []);
 
   // TODO: Replace with API call to fetch driver statistics from backend
   const driverStats = {
@@ -98,8 +132,8 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
                     <Eye className="w-6 h-6 text-green-600" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-medium text-green-900">ระบบตรวจจับทำงานปกติ</h3>
-                    <p className="text-green-700">ไม่พบสัญญาณความเหนื่อยล้า - ขับขี่อย่างปลอดภัย</p>
+                    <h3 className="text-lg font-medium text-green-900">สถานะล่าสุด</h3>
+                    <p className="text-green-700">{latestStatus?.status || "ไม่พบสัญญาณความเหนื่อยล้า"}</p>
                   </div>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-transparent bg-green-600 text-white px-2.5 py-0.5 text-xs font-semibold transition-colors hover:bg-green-700 shrink-0 ml-2">

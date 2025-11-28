@@ -56,14 +56,8 @@ func ReceiveDeviceData(c *gin.Context) {
 		return
 	}
 
-	// Parse timestamp or use current time
+	// Use server-side timestamp to ensure consistent ordering
 	timestamp := time.Now()
-	if payload.Timestamp != "" {
-		parsedTime, err := time.Parse(time.RFC3339, payload.Timestamp)
-		if err == nil {
-			timestamp = parsedTime
-		}
-	}
 
 	// Insert data into database
 	_, err := database.DB.Exec(`
@@ -86,8 +80,14 @@ func ReceiveDeviceData(c *gin.Context) {
 		log.Printf("⚠️ Warning: Could not update device last_update: %v", err)
 	}
 
-	log.Printf("✅ Data received from device %s: drowsiness=%s, eye_closure=%.2f",
-		deviceID, payload.DrowsinessLevel, payload.EyeClosure)
+	// Diagnostic: confirm latest row id for this device
+	var latestID int
+	_ = database.DB.QueryRow(`
+		SELECT id FROM drowsiness_data WHERE device_id = $1 ORDER BY timestamp DESC, id DESC LIMIT 1
+	`, deviceID).Scan(&latestID)
+
+	log.Printf("✅ Data received from device %s: drowsiness=%s, eye_closure=%.2f (latest id=%d)",
+		deviceID, payload.DrowsinessLevel, payload.EyeClosure, latestID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
@@ -141,12 +141,17 @@ func ReceiveAlert(c *gin.Context) {
 func GetDeviceLatestData(c *gin.Context) {
 	deviceID := c.Param("id")
 
+	// Prevent client/proxy caching so latest data is always fetched
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
 	var data models.DrowsinessData
 	err := database.DB.QueryRow(`
 		SELECT id, device_id, eye_closure, drowsiness_level, status, timestamp, created_at
 		FROM drowsiness_data
 		WHERE device_id = $1
-		ORDER BY timestamp DESC
+		ORDER BY timestamp DESC, id DESC
 		LIMIT 1
 	`, deviceID).Scan(
 		&data.ID, &data.DeviceID, &data.EyeClosure,
@@ -172,11 +177,16 @@ func GetDeviceHistory(c *gin.Context) {
 	deviceID := c.Param("id")
 	limit := c.DefaultQuery("limit", "100")
 
+	// Prevent caching
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
 	rows, err := database.DB.Query(`
 		SELECT id, device_id, eye_closure, drowsiness_level, status, timestamp, created_at
 		FROM drowsiness_data
 		WHERE device_id = $1
-		ORDER BY timestamp DESC
+		ORDER BY timestamp DESC, id DESC
 		LIMIT $2
 	`, deviceID, limit)
 
@@ -213,11 +223,16 @@ func GetDeviceAlerts(c *gin.Context) {
 	deviceID := c.Param("id")
 	limit := c.DefaultQuery("limit", "50")
 
+	// Prevent caching
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
 	rows, err := database.DB.Query(`
 		SELECT id, device_id, alert_type, severity, acknowledged, status, timestamp, created_at
 		FROM alerts
 		WHERE device_id = $1
-		ORDER BY timestamp DESC
+		ORDER BY timestamp DESC, id DESC
 		LIMIT $2
 	`, deviceID, limit)
 

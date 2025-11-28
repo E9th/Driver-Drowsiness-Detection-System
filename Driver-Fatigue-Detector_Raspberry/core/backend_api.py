@@ -4,7 +4,7 @@ Replaces Firebase connection with HTTP requests to Go backend
 """
 
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 # Backend Configuration
@@ -37,36 +37,48 @@ def initialize_backend():
         backend_connected = False
         return False
 
+def _ensure_connection():
+    """Lazy-initialize backend connection if not yet connected."""
+    global backend_connected
+    if not backend_connected:
+        initialize_backend()
+    return backend_connected
+
+
+def _map_status_to_level(status: str) -> str:
+    s = (status or "").lower()
+    if "critical" in s:
+        return "high"
+    if "drowsiness" in s:
+        return "medium"
+    return "low"
 
 def send_data_to_backend(data):
     """
-    Send drowsiness detection data to backend
-    
-    Args:
-        data (dict): Dictionary containing drowsiness data
-            - eye_closure (float): Eye closure ratio (0.0 - 1.0)
-            - drowsiness_level (str): Level of drowsiness (low/medium/high)
-            - status (str): Current status (alert/drowsy/normal)
-            - timestamp (str, optional): ISO format timestamp
+    Send minimal payload required by PostgreSQL backend.
+    Only sends: device_id (via URL), drowsiness_level, timestamp, status.
     """
     if not backend_connected:
-        logger.warning("⚠️ Backend not connected, skipping data send")
-        return False
+        if not _ensure_connection():
+            logger.warning("⚠️ Backend not connected, skipping data send")
+            return False
     
     try:
-        # Add timestamp if not provided
-        if "timestamp" not in data:
-            data["timestamp"] = datetime.now().isoformat()
-        
-        # Send POST request to backend
+        # Build minimal payload
+        payload = {
+            "drowsiness_level": data.get("drowsiness_level") or _map_status_to_level(data.get("status")),
+            "status": data.get("status", "NORMAL"),
+            "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        }
+
         response = requests.post(
             f"{BACKEND_URL}/api/devices/{DEVICE_ID}/data",
-            json=data,
-            timeout=5
+            json=payload,
+            timeout=5,
         )
         
         if response.status_code == 200:
-            logger.info(f"✅ Data sent successfully: drowsiness={data.get('drowsiness_level')}, eye_closure={data.get('eye_closure')}")
+            logger.info(f"✅ Data sent successfully: level={payload.get('drowsiness_level')}, status={payload.get('status')}")
             return True
         else:
             logger.error(f"❌ Failed to send data: {response.status_code} - {response.text}")
@@ -86,8 +98,9 @@ def send_alert_to_backend(alert_type, severity="medium"):
         severity (str): Severity level ('low', 'medium', 'high')
     """
     if not backend_connected:
-        logger.warning("⚠️ Backend not connected, skipping alert send")
-        return False
+        if not _ensure_connection():
+            logger.warning("⚠️ Backend not connected, skipping alert send")
+            return False
     
     try:
         alert_data = {
@@ -113,6 +126,16 @@ def send_alert_to_backend(alert_type, severity="medium"):
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Error sending alert: {e}")
         return False
+
+
+# Compatibility wrappers for legacy imports
+def send_data(data):
+    """Backward-compatible alias for send_data_to_backend."""
+    return send_data_to_backend(data)
+
+def send_alert(alert_type, severity="medium"):
+    """Backward-compatible alias for send_alert_to_backend."""
+    return send_alert_to_backend(alert_type, severity)
 
 
 def get_latest_data():
