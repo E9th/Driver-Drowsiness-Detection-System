@@ -9,13 +9,14 @@ import (
 )
 
 type Config struct {
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	ServerPort string
+	DBHost      string
+	DBPort      string
+	DBUser      string
+	DBPassword  string
+	DBName      string
+	ServerPort  string
 	Environment string
+	JWTSecret   string
 }
 
 var AppConfig *Config
@@ -36,11 +37,15 @@ func LoadConfig() {
 		DBName:      getEnv("DB_NAME", "drowsiness_db"),
 		ServerPort:  getEnv("PORT", "8080"),
 		Environment: getEnv("ENV", "development"),
+		JWTSecret:   getEnv("JWT_SECRET", "dev-secret-change-me"),
 	}
 
 	log.Println("✅ Configuration loaded successfully")
 	log.Printf("📊 Database: %s@%s:%s/%s", AppConfig.DBUser, AppConfig.DBHost, AppConfig.DBPort, AppConfig.DBName)
 	log.Printf("🌐 Server Port: %s", AppConfig.ServerPort)
+	if AppConfig.Environment == "production" && AppConfig.JWTSecret == "dev-secret-change-me" {
+		log.Println("⚠️ Warning: Using default JWT secret in production. Set JWT_SECRET env variable!")
+	}
 }
 
 // GetDatabaseURL returns the PostgreSQL connection string

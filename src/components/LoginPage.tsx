@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { login } from "../utils/auth";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -17,11 +18,27 @@ export function LoginPage({ onBack, onSwitchToSignup, onDriverDashboard, onMaste
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // จำลองการเข้าสู่ระบบ
-    console.log("Login attempt:", { email, password });
-    alert("การเข้าสู่ระบบสำเร็จ! (Demo)");
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await login(email, password);
+      console.log("Logged in", result);
+      // Decide dashboard based on role (driver/admin)
+      if (result.user.role === 'driver') {
+        onDriverDashboard();
+      } else {
+        onMasterDashboard();
+      }
+    } catch (err: any) {
+      setError(err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -98,8 +115,11 @@ export function LoginPage({ onBack, onSwitchToSignup, onDriverDashboard, onMaste
                 </Button>
               </div>
 
-              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700">
-                เข้าสู่ระบบ
+              {error && (
+                <p className="text-sm text-red-600">{error}</p>
+              )}
+              <Button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
+                {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
               </Button>
             </form>
 

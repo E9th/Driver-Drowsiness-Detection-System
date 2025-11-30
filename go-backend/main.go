@@ -31,6 +31,14 @@ func main() {
 		log.Fatalf("❌ Failed to run migrations: %v", err)
 	}
 
+	// Initial purge of previous days' data (retain only today)
+	if err := database.PurgeNonTodayData(); err != nil {
+		log.Printf("⚠️ Initial purge encountered an error: %v", err)
+	}
+
+	// Schedule daily purge at midnight UTC
+	database.ScheduleDailyPurge()
+
 	// Seed sample devices (for testing)
 	if err := database.SeedDevices(); err != nil {
 		log.Printf("⚠️ Warning: Failed to seed devices: %v", err)
@@ -70,11 +78,17 @@ func setupRouter() *gin.Engine {
 
 	// CORS middleware - allow requests from React frontend
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:5173", "https://*.vercel.app"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowOrigins: []string{
+			"http://localhost:3000",
+			"http://localhost:5173",
+		},
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{
+			"Origin", "Content-Type", "Authorization", "Accept", "Cache-Control", "Pragma",
+		},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
+		MaxAge:           43200, // 12 hours
 	}))
 
 	// Root endpoints
@@ -85,16 +99,22 @@ func setupRouter() *gin.Engine {
 	// API routes
 	api := router.Group("/api")
 	{
+		// Auth routes
+		api.POST("/auth/register", handlers.Register)
+		api.POST("/auth/login", handlers.Login)
+		api.GET("/auth/me", handlers.AuthMiddleware(), handlers.Me)
+
 		// Health check
 		api.GET("/health", handlers.HealthCheck)
 
 		// Device routes
 		devices := api.Group("/devices")
 		{
-			// Get all devices
+			// Public device list could be protected later
 			devices.GET("", handlers.GetAllDevices)
 
 			// Device-specific routes
+			// These could require AuthMiddleware() later
 			devices.POST("/:id/data", handlers.ReceiveDeviceData)  // Python sends data here
 			devices.POST("/:id/alert", handlers.ReceiveAlert)      // Python sends alerts here
 			devices.GET("/:id/data", handlers.GetDeviceLatestData) // Frontend gets latest data

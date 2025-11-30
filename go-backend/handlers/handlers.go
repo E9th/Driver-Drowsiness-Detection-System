@@ -6,10 +6,15 @@ import (
 	"net/http"
 	"time"
 
+	"driver-drowsiness-backend/config"
 	"driver-drowsiness-backend/database"
 	"driver-drowsiness-backend/models"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Root returns a simple landing response
@@ -297,4 +302,153 @@ func GetAllDevices(c *gin.Context) {
 		"count":   len(devices),
 		"devices": devices,
 	})
+}
+
+// ================== AUTH HANDLERS & MIDDLEWARE ==================
+
+// Register creates a new user account
+func Register(c *gin.Context) {
+	var req models.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Check existing user
+	if _, err := database.GetUserByEmail(req.Email); err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+		return
+	}
+
+	// Hash password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	userID, err := database.CreateUser(req.Email, string(hash), req.Name, "driver")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		return
+	}
+
+	token, err := generateJWT(userID, req.Email, "driver")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create token"})
+		return
+	}
+
+	resp := models.AuthResponse{Token: token}
+	resp.User.ID = userID
+	resp.User.Email = req.Email
+	resp.User.Name = req.Name
+	resp.User.Role = "driver"
+
+	c.JSON(http.StatusCreated, resp)
+}
+
+// Login authenticates a user and returns a JWT
+func Login(c *gin.Context) {
+	var req models.LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	user, err := database.GetUserByEmail(req.Email)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	token, err := generateJWT(user.ID, user.Email, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create token"})
+		return
+	}
+
+	resp := models.AuthResponse{Token: token}
+	resp.User.ID = user.ID
+	resp.User.Email = user.Email
+	resp.User.Name = user.Name
+	resp.User.Role = user.Role
+	c.JSON(http.StatusOK, resp)
+}
+
+// Me returns current authenticated user
+func Me(c *gin.Context) {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	userID := userIDVal.(int)
+	user, err := database.GetUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":    user.ID,
+		"email": user.Email,
+		"name":  user.Name,
+		"role":  user.Role,
+	})
+}
+
+// AuthMiddleware validates JWT and sets user in context
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" || !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Missing token"})
+			return
+		}
+		tokenStr := strings.TrimPrefix(header, "Bearer ")
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+			return []byte(config.AppConfig.JWTSecret), nil
+		})
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			return
+		}
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
+			return
+		}
+		uidFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid user id"})
+			return
+		}
+		c.Set("user_id", int(uidFloat))
+		c.Set("user_email", claims["email"])
+		c.Next()
+	}
+}
+
+// generateJWT creates a signed token
+func generateJWT(userID int, email, role string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"email":   email,
+		"role":    role,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"iat":     time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(config.AppConfig.JWTSecret))
+}
+
+// (Optional) helper to convert string id param to int
+func paramIDToInt(c *gin.Context, name string) (int, error) {
+	s := c.Param(name)
+	return strconv.Atoi(s)
 }

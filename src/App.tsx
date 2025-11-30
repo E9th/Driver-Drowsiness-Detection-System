@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AuthProvider, useAuth } from "./components/AuthContext";
 import { Header } from "./components/Header";
 import { HomePage } from "./components/HomePage";
 import { LoginPage } from "./components/LoginPage";
@@ -11,20 +12,25 @@ import { VideoSection } from "./components/VideoSection";
 
 type PageType = "home" | "login" | "signup" | "driver-dashboard" | "master-dashboard" | "profile" | "project-details" | "video-demo";
 
-export default function App() {
+function AppInner() {
   const [currentPage, setCurrentPage] = useState<PageType>("home");
+  const [demoMode, setDemoMode] = useState(false); // อนุญาตเข้าหน้า dashboard แบบ demo ไม่ต้อง login
+  const { isAuthenticated, loading, user } = useAuth();
 
-  const navigateToHome = () => setCurrentPage("home");
-  const navigateToLogin = () => setCurrentPage("login");
-  const navigateToSignup = () => setCurrentPage("signup");
-  const navigateToDriverDashboard = () => setCurrentPage("driver-dashboard");
-  const navigateToMasterDashboard = () => setCurrentPage("master-dashboard");
+  const navigateToHome = () => { setCurrentPage("home"); setDemoMode(false); };
+  const navigateToLogin = () => { setCurrentPage("login"); setDemoMode(false); };
+  const navigateToSignup = () => { setCurrentPage("signup"); setDemoMode(false); };
+  const navigateToDriverDashboard = () => { setCurrentPage("driver-dashboard"); if (!isAuthenticated) setDemoMode(true); };
+  const navigateToMasterDashboard = () => { setCurrentPage("master-dashboard"); if (!isAuthenticated) setDemoMode(true); };
   const navigateToProfile = () => setCurrentPage("profile");
   const navigateToProjectDetails = () => setCurrentPage("project-details");
   const navigateToVideoDemo = () => setCurrentPage("video-demo");
 
   // แสดง Header เฉพาะเมื่ออยู่ในหน้า home
   const renderCurrentPage = () => {
+    if (loading) {
+      return <div className="p-8 text-center">กำลังโหลด...</div>;
+    }
     switch (currentPage) {
       case "login":
         return (
@@ -40,19 +46,35 @@ export default function App() {
           <SignupPage 
             onBack={navigateToHome}
             onSwitchToLogin={navigateToLogin}
+            onDriverDashboard={navigateToDriverDashboard}
+            onMasterDashboard={navigateToMasterDashboard}
           />
         );
       case "driver-dashboard":
-        return (
-          <DriverDashboard 
+        return (isAuthenticated || demoMode) ? (
+          <DriverDashboard
             onBack={navigateToHome}
             onProfile={navigateToProfile}
           />
+        ) : (
+          <LoginPage
+            onBack={navigateToHome}
+            onSwitchToSignup={navigateToSignup}
+            onDriverDashboard={navigateToDriverDashboard}
+            onMasterDashboard={navigateToMasterDashboard}
+          />
         );
       case "master-dashboard":
-        return (
+        return isAuthenticated && user?.role === 'admin' ? (
           <MasterDashboard 
             onBack={navigateToHome}
+          />
+        ) : (
+          <LoginPage 
+            onBack={navigateToHome}
+            onSwitchToSignup={navigateToSignup}
+            onDriverDashboard={navigateToDriverDashboard}
+            onMasterDashboard={navigateToMasterDashboard}
           />
         );
       case "profile":
@@ -93,4 +115,12 @@ export default function App() {
   };
 
   return renderCurrentPage();
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  );
 }

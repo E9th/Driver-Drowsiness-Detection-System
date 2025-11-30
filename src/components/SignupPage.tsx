@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { register } from "../utils/auth";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -9,9 +10,13 @@ import { Eye, EyeOff, ArrowLeft, Building, Users, Car } from "lucide-react";
 interface SignupPageProps {
   onBack: () => void;
   onSwitchToLogin: () => void;
+  onDriverDashboard: () => void;
+  onMasterDashboard: () => void;
 }
 
-export function SignupPage({ onBack, onSwitchToLogin }: SignupPageProps) {
+import { useAuth } from "./AuthContext";
+
+export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMasterDashboard }: SignupPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     firstName: "",
@@ -24,17 +29,33 @@ export function SignupPage({ onBack, onSwitchToLogin }: SignupPageProps) {
     phone: ""
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { refresh } = useAuth();
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setError(null);
     if (formData.password !== formData.confirmPassword) {
-      alert("รหัสผ่านไม่ตรงกัน");
+      setError("รหัสผ่านไม่ตรงกัน");
       return;
     }
-    
-    // จำลองการสมัครสมาชิก
-    console.log("Signup attempt:", formData);
-    alert("สมัครสมาชิกสำเร็จ! (Demo)");
+    try {
+      setLoading(true);
+      const name = `${formData.firstName} ${formData.lastName}`.trim();
+      const result = await register(formData.email, formData.password, name);
+      await refresh();
+      // Navigate based on role
+      if (result.user.role === 'admin') {
+        onMasterDashboard();
+      } else {
+        onDriverDashboard();
+      }
+    } catch (err: any) {
+      setError(err.message || "เกิดข้อผิดพลาดในการสมัครสมาชิก");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -209,8 +230,9 @@ export function SignupPage({ onBack, onSwitchToLogin }: SignupPageProps) {
                 </p>
               </div>
 
-              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700">
-                สมัครสมาชิก
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <Button type="submit" disabled={loading} className="w-full bg-green-600 hover:bg-green-700">
+                {loading ? "กำลังสมัครสมาชิก..." : "สมัครสมาชิก"}
               </Button>
             </form>
 

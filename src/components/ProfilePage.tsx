@@ -173,25 +173,12 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid md:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                    <div className="text-2xl font-bold text-green-600">94/100</div>
-                    <div className="text-sm text-green-700">คะแนนความปลอดภัย</div>
-                    <div className="text-xs text-green-600 mt-1">ระดับดีเยี่ยม</div>
-                  </div>
-                  
-                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                    <div className="text-2xl font-bold text-blue-600">6.5</div>
-                    <div className="text-sm text-blue-700">ชั่วโมง/วัน</div>
-                    <div className="text-xs text-blue-600 mt-1">เวลาขับขี่เฉลี่ย</div>
-                  </div>
-
+                <div className="grid md:grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-yellow-50 rounded-lg border border-orange-200">
                     <div className="text-2xl font-bold text-orange-600">2</div>
                     <div className="text-sm text-orange-700">ครั้งวันนี้</div>
                     <div className="text-xs text-orange-600 mt-1">การแจ้งเตือน</div>
                   </div>
-
                   <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200">
                     <div className="text-2xl font-bold text-purple-600">15</div>
                     <div className="text-sm text-purple-700">วัน</div>

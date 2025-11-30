@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "./AuthContext";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -52,10 +53,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     activeDrivers: 36,
     alertsToday: 15,
     criticalAlerts: 3,
-    safetyScore: 92,
     totalFleet: 52,
-    hoursToday: 8.5, // ชั่วโมงทำงานวันนี้
-    startTime: "06:00", // เวลาเริ่มงานวันนี้
     bannedDrivers: 2 // ผู้ขับขี่ที่ถูกแบน
   };
 
@@ -124,6 +122,9 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     }
   };
 
+  const { logoutUser } = useAuth();
+  const handleLogout = () => { logoutUser(); onBack(); };
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -133,7 +134,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
             <div className="flex items-center space-x-4">
               <Button
                 variant="ghost"
-                onClick={onBack}
+                onClick={handleLogout}
                 className="text-slate-600 hover:text-slate-900"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -177,8 +178,8 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
           </div>
         )}
 
-        {/* Stats Overview - ปรับ responsive สำหรับ tablet และ laptop */}
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 mb-6 lg:mb-8">
+        {/* Stats Overview (removed hoursToday & safetyScore) */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 mb-6 lg:mb-8">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-slate-600 flex items-center space-x-2">
@@ -205,21 +206,6 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
               <div className="text-2xl font-bold text-slate-900">{overallStats.totalFleet}</div>
               <div className="text-sm text-slate-600">
                 ใช้งาน: {overallStats.activeDrivers} คัน
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-slate-600 flex items-center space-x-2">
-                <Clock className="w-4 h-4" />
-                <span>ชั่วโมงทำงานวันนี้</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{overallStats.hoursToday}</div>
-              <div className="text-sm text-slate-600">
-                เริ่ม: {overallStats.startTime} น.
               </div>
             </CardContent>
           </Card>
@@ -500,7 +486,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
             </div>
 
             {/* Performance Metrics - ปรับให้แสดงข้อมูลวันนี้ */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 lg:gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
@@ -567,36 +553,6 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Activity className="w-5 h-5 text-purple-500" />
-                    <span>สรุปประสิทธิภาพวันนี้</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-center space-y-2">
-                    <div className="text-3xl font-bold text-green-600">{overallStats.safetyScore}%</div>
-                    <div className="text-sm text-slate-600">คะแนนความปลอดภัยเฉลี่ย</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <div className="text-xl font-bold">{overallStats.hoursToday}</div>
-                      <div className="text-xs text-slate-600">ชั่วโมงทำงาน</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold">{overallStats.activeDrivers}</div>
-                      <div className="text-xs text-slate-600">คนขับขี่</div>
-                    </div>
-                  </div>
-                  <Separator />
-                  <div className="text-center">
-                    <div className="text-sm text-slate-500">
-                      ระบบจะรีเซ็ตข้อมูลในอีก {24 - new Date().getHours()} ชั่วโมง
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           </TabsContent>
         </Tabs>

@@ -15,13 +15,13 @@ type Device struct {
 
 // DrowsinessData represents real-time drowsiness detection data
 type DrowsinessData struct {
-	ID               int       `json:"id" db:"id"`
-	DeviceID         string    `json:"device_id" db:"device_id"`
-	EyeClosure       float64   `json:"eye_closure" db:"eye_closure"`
-	DrowsinessLevel  string    `json:"drowsiness_level" db:"drowsiness_level"`
-	Status           string    `json:"status" db:"status"`
-	Timestamp        time.Time `json:"timestamp" db:"timestamp"`
-	CreatedAt        time.Time `json:"created_at" db:"created_at"`
+	ID              int       `json:"id" db:"id"`
+	DeviceID        string    `json:"device_id" db:"device_id"`
+	EyeClosure      float64   `json:"eye_closure" db:"eye_closure"`
+	DrowsinessLevel string    `json:"drowsiness_level" db:"drowsiness_level"`
+	Status          string    `json:"status" db:"status"`
+	Timestamp       time.Time `json:"timestamp" db:"timestamp"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 }
 
 // Alert represents drowsiness alert
@@ -49,4 +49,38 @@ type AlertPayload struct {
 	AlertType string `json:"alert_type"`
 	Severity  string `json:"severity"`
 	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// User represents an application user (for authentication)
+type User struct {
+	ID           int       `json:"id" db:"id"`
+	Email        string    `json:"email" db:"email"`
+	PasswordHash string    `json:"-" db:"password_hash"`
+	Name         string    `json:"name" db:"name"`
+	Role         string    `json:"role" db:"role"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+}
+
+// RegisterRequest represents incoming register payload
+type RegisterRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
+	Name     string `json:"name"`
+}
+
+// LoginRequest represents incoming login payload
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
+// AuthResponse is returned after successful login/register
+type AuthResponse struct {
+	Token string `json:"token"`
+	User  struct {
+		ID    int    `json:"id"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+		Role  string `json:"role"`
+	} `json:"user"`
 }
