@@ -264,3 +264,34 @@ func ScheduleDailyPurge() {
 	}()
 	log.Println("⏰ Scheduled daily purge at UTC midnight")
 }
+
+// UpsertDeviceForUser links a device to a user (by email and user ID).
+// If the device already exists, its driver_email and user_id are updated.
+func UpsertDeviceForUser(deviceID, email string, userID int) error {
+	if deviceID == "" {
+		return nil
+	}
+	_, err := DB.Exec(`
+		INSERT INTO devices (id, driver_email, user_id, status)
+		VALUES ($1, $2, $3, 'active')
+		ON CONFLICT (id) DO UPDATE SET
+		  driver_email = EXCLUDED.driver_email,
+		  user_id = EXCLUDED.user_id
+	`, deviceID, email, userID)
+	return err
+}
+
+// GetPrimaryDeviceForUser returns the latest device associated with a user.
+func GetPrimaryDeviceForUser(userID int) (string, error) {
+	var deviceID string
+	err := DB.QueryRow(`
+		SELECT id FROM devices
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, userID).Scan(&deviceID)
+	if err != nil {
+		return "", err
+	}
+	return deviceID, nil
+}

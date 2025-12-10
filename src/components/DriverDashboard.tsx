@@ -8,7 +8,8 @@ interface DriverDashboardProps {
 }
 
 export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
-  const deviceId = "device_01";
+  const { user, logoutUser } = useAuth();
+  const deviceId = user?.device_id || "device_01";
   const [drivingStatus, setDrivingStatus] = useState("พร้อมขับขี่");
   const [latestStatus, setLatestStatus] = useState<{ drowsiness_level?: string; status?: string } | null>(null);
   const [allEvents, setAllEvents] = useState<Array<{ time: string; label: string; severity: string; hour: number }>>([]); // warning/danger only
@@ -94,7 +95,6 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
     return () => clearInterval(t);
   }, [fetchStatusHistory, lastCriticalAt]);
 
-  const { logoutUser } = useAuth();
   const handleLogout = () => { logoutUser(); onBack(); };
 
   return (
@@ -113,7 +113,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
                 </div>
                 <div>
                   <h1 className="text-base sm:text-lg font-medium">Dashboard ผู้ขับขี่</h1>
-                  <p className="text-xs sm:text-sm text-slate-600">สวัสดี, คุณสมชาย ใจดี</p>
+                  <p className="text-xs sm:text-sm text-slate-600">สวัสดี, {user?.name || "ผู้ขับขี่"}</p>
                 </div>
               </div>
             </div>

@@ -333,6 +333,13 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	// Link device to this user if provided
+	if strings.TrimSpace(req.DeviceID) != "" {
+		if err := database.UpsertDeviceForUser(req.DeviceID, req.Email, userID); err != nil {
+			log.Printf("⚠️ Failed to link device %s to user %s: %v", req.DeviceID, req.Email, err)
+		}
+	}
+
 	token, err := generateJWT(userID, req.Email, "driver")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create token"})
@@ -344,6 +351,7 @@ func Register(c *gin.Context) {
 	resp.User.Email = req.Email
 	resp.User.Name = req.Name
 	resp.User.Role = "driver"
+	resp.User.DeviceID = req.DeviceID
 
 	c.JSON(http.StatusCreated, resp)
 }
@@ -367,6 +375,8 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	deviceID, _ := database.GetPrimaryDeviceForUser(user.ID)
+
 	token, err := generateJWT(user.ID, user.Email, user.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create token"})
@@ -378,6 +388,7 @@ func Login(c *gin.Context) {
 	resp.User.Email = user.Email
 	resp.User.Name = user.Name
 	resp.User.Role = user.Role
+	resp.User.DeviceID = deviceID
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -394,11 +405,13 @@ func Me(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
+	deviceID, _ := database.GetPrimaryDeviceForUser(user.ID)
 	c.JSON(http.StatusOK, gin.H{
-		"id":    user.ID,
-		"email": user.Email,
-		"name":  user.Name,
-		"role":  user.Role,
+		"id":        user.ID,
+		"email":     user.Email,
+		"name":      user.Name,
+		"role":      user.Role,
+		"device_id": deviceID,
 	})
 }
 

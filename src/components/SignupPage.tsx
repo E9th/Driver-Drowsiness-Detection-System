@@ -26,7 +26,8 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
     confirmPassword: "",
     company: "",
     userType: "",
-    phone: ""
+    phone: "",
+    deviceId: ""
   });
 
   const [loading, setLoading] = useState(false);
@@ -43,7 +44,7 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
     try {
       setLoading(true);
       const name = `${formData.firstName} ${formData.lastName}`.trim();
-      const result = await register(formData.email, formData.password, name);
+      const result = await register(formData.email, formData.password, name, formData.deviceId);
       await refresh();
       // Navigate based on role
       if (result.user.role === 'admin') {
@@ -142,6 +143,17 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
                   placeholder="กรอกชื่อบริษัทหรือองค์กร"
                   value={formData.company}
                   onChange={(e) => handleInputChange("company", e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="deviceId">ชื่ออุปกรณ์ / Device ID</Label>
+                <Input
+                  id="deviceId"
+                  placeholder="เช่น device_01"
+                  value={formData.deviceId}
+                  onChange={(e) => handleInputChange("deviceId", e.target.value)}
                   required
                 />
               </div>

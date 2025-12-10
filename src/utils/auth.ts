@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   name: string;
   role: string;
+  device_id?: string;
 }
 
 export interface AuthResult {
@@ -57,10 +58,10 @@ export async function login(email: string, password: string): Promise<AuthResult
   return data;
 }
 
-export async function register(email: string, password: string, name?: string): Promise<AuthResult> {
+export async function register(email: string, password: string, name?: string, device_id?: string): Promise<AuthResult> {
   const data = await request<AuthResult>("/auth/register", {
     method: 'POST',
-    body: JSON.stringify({ email, password, name })
+    body: JSON.stringify({ email, password, name, device_id })
   });
   setToken(data.token);
   return data;

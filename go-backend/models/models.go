@@ -66,6 +66,7 @@ type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
 	Name     string `json:"name"`
+	DeviceID string `json:"device_id"`
 }
 
 // LoginRequest represents incoming login payload
@@ -78,9 +79,10 @@ type LoginRequest struct {
 type AuthResponse struct {
 	Token string `json:"token"`
 	User  struct {
-		ID    int    `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
-		Role  string `json:"role"`
+		ID       int    `json:"id"`
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Role     string `json:"role"`
+		DeviceID string `json:"device_id,omitempty"`
 	} `json:"user"`
 }

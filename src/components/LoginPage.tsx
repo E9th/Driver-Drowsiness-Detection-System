@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { useAuth } from "./AuthContext";
 
 interface LoginPageProps {
   onBack: () => void;
@@ -20,6 +21,7 @@ export function LoginPage({ onBack, onSwitchToSignup, onDriverDashboard, onMaste
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { refresh } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +30,7 @@ export function LoginPage({ onBack, onSwitchToSignup, onDriverDashboard, onMaste
     try {
       const result = await login(email, password);
       console.log("Logged in", result);
+      await refresh();
       // Decide dashboard based on role (driver/admin)
       if (result.user.role === 'driver') {
         onDriverDashboard();
