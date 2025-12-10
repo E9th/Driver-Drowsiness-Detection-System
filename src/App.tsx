@@ -7,10 +7,8 @@ import { SignupPage } from "./components/SignupPage";
 import { DriverDashboard } from "./components/DriverDashboard";
 import { MasterDashboard } from "./components/MasterDashboard";
 import { ProfilePage } from "./components/ProfilePage";
-import { ProjectDetailsSection } from "./components/ProjectDetailsSection";
-import { VideoSection } from "./components/VideoSection";
 
-type PageType = "home" | "login" | "signup" | "driver-dashboard" | "master-dashboard" | "profile" | "project-details" | "video-demo";
+type PageType = "home" | "login" | "signup" | "driver-dashboard" | "master-dashboard" | "profile";
 
 function AppInner() {
   const [currentPage, setCurrentPage] = useState<PageType>("home");
@@ -23,8 +21,7 @@ function AppInner() {
   const navigateToDriverDashboard = () => { setCurrentPage("driver-dashboard"); if (!isAuthenticated) setDemoMode(true); };
   const navigateToMasterDashboard = () => { setCurrentPage("master-dashboard"); if (!isAuthenticated) setDemoMode(true); };
   const navigateToProfile = () => setCurrentPage("profile");
-  const navigateToProjectDetails = () => setCurrentPage("project-details");
-  const navigateToVideoDemo = () => setCurrentPage("video-demo");
+  // video demo removed
 
   // แสดง Header เฉพาะเมื่ออยู่ในหน้า home
   const renderCurrentPage = () => {
@@ -83,32 +80,16 @@ function AppInner() {
             onBack={navigateToDriverDashboard}
           />
         );
-      case "project-details":
-        return (
-          <ProjectDetailsSection 
-            onBack={navigateToHome}
-          />
-        );
-      case "video-demo":
-        return (
-          <VideoSection 
-            onBack={navigateToHome}
-          />
-        );
+      // video-demo route removed
       default:
         return (
           <div className="min-h-screen">
             <Header 
               onLoginClick={navigateToLogin}
               onSignupClick={navigateToSignup}
-              onProjectDetails={navigateToProjectDetails}
-              onVideoDemo={navigateToVideoDemo}
               onHome={navigateToHome}
             />
-            <HomePage 
-              onProjectDetails={navigateToProjectDetails}
-              onVideoDemo={navigateToVideoDemo}
-            />
+            <HomePage />
           </div>
         );
     }
