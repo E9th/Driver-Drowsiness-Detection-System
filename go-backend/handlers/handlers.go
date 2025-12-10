@@ -327,7 +327,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	userID, err := database.CreateUser(req.Email, string(hash), req.Name, "driver")
+	userID, err := database.CreateUser(req.Email, string(hash), req.Name, "driver", req.Phone)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
@@ -351,6 +351,7 @@ func Register(c *gin.Context) {
 	resp.User.Email = req.Email
 	resp.User.Name = req.Name
 	resp.User.Role = "driver"
+	resp.User.Phone = req.Phone
 	resp.User.DeviceID = req.DeviceID
 
 	c.JSON(http.StatusCreated, resp)
@@ -366,11 +367,13 @@ func Login(c *gin.Context) {
 
 	user, err := database.GetUserByEmail(req.Email)
 	if err != nil {
+		log.Printf("🔐 Login failed: user not found for email=%s: %v", req.Email, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		log.Printf("🔐 Login failed: wrong password for email=%s", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
@@ -388,6 +391,7 @@ func Login(c *gin.Context) {
 	resp.User.Email = user.Email
 	resp.User.Name = user.Name
 	resp.User.Role = user.Role
+	resp.User.Phone = user.Phone
 	resp.User.DeviceID = deviceID
 	c.JSON(http.StatusOK, resp)
 }
@@ -411,6 +415,7 @@ func Me(c *gin.Context) {
 		"email":     user.Email,
 		"name":      user.Name,
 		"role":      user.Role,
+		"phone":     user.Phone,
 		"device_id": deviceID,
 	})
 }

@@ -44,7 +44,7 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
     try {
       setLoading(true);
       const name = `${formData.firstName} ${formData.lastName}`.trim();
-      const result = await register(formData.email, formData.password, name, formData.deviceId);
+      const result = await register(formData.email, formData.password, name, formData.deviceId, formData.phone);
       await refresh();
       // Navigate based on role
       if (result.user.role === 'admin') {

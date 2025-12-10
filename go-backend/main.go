@@ -10,7 +10,6 @@ import (
 	"driver-drowsiness-backend/database"
 	"driver-drowsiness-backend/handlers"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -76,17 +75,17 @@ func setupRouter() *gin.Engine {
 
 	router := gin.Default()
 
-	// CORS middleware - relax policy to allow all origins (no cookies)
-	router.Use(cors.New(cors.Config{
-		AllowAllOrigins: true,
-		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{
-			"Origin", "Content-Type", "Authorization", "Accept", "Cache-Control", "Pragma",
-		},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: false,
-		MaxAge:           43200, // 12 hours
-	}))
+	// Simple CORS middleware: allow all origins, handle preflight
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept, Cache-Control, Pragma")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
 
 	// Root endpoints
 	router.GET("/", handlers.Root)

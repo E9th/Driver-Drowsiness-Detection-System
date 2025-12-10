@@ -53,7 +53,7 @@ export function Header({ onLoginClick, onSignupClick, onHome }: HeaderProps) {
             <Button 
               variant="outline" 
               size="sm" 
-              className="text-[11px] sm:text-sm px-2 sm:px-3 h-8 sm:h-9 border-slate-400 text-[#313131] hover:text-[#F1F5F9] hover:bg-slate-700"
+              className="text-[11px] sm:text-sm px-2 sm:px-3 h-8 sm:h-9 border-slate-400 bg-[#F1F5F9] text-[#313131] hover:text-[#313131] hover:bg-[#989898]"
               onClick={onLoginClick}
             >
               เข้าสู่ระบบ

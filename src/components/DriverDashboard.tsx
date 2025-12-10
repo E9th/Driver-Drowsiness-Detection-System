@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "./AuthContext";
-import { ArrowLeft, Eye, AlertTriangle, Activity, Settings, Bell, Shield, Car } from "lucide-react";
+import { ArrowLeft, Eye, AlertTriangle, Activity, Settings, Bell, Shield, Car, Moon, Sun } from "lucide-react";
 
 interface DriverDashboardProps {
   onBack: () => void;
@@ -16,12 +16,18 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   const [displayEvents, setDisplayEvents] = useState<Array<{ time: string; label: string; severity: string; hour: number }>>([]);
   const [lastCriticalAt, setLastCriticalAt] = useState<number | null>(null);
   const [alertDisplayLimit, setAlertDisplayLimit] = useState<number>(10);
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const stored = window.localStorage.getItem("theme");
+    if (stored === "dark") return true;
+    if (stored === "light") return false;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
 
   const driverStats = useMemo(() => {
-    return {
-      eventsToday: allEvents.length,
-      lastEvent: allEvents[0]?.time || "-"
-    };
+    const eventsToday = allEvents.length;
+    const lastEvent = allEvents[0]?.time || "-";
+    return { eventsToday, lastEvent };
   }, [allEvents]);
 
   // แสดงเวลาแบบ UTC HH:mm:ss ตาม schema (timestamp เก็บเป็น UTC 'Z')
@@ -85,6 +91,19 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
     fetchStatusHistory();
   }, [fetchStatusHistory]);
 
+  // Apply theme to <html> and persist
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (isDark) {
+      root.classList.add("dark");
+      window.localStorage.setItem("theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      window.localStorage.setItem("theme", "light");
+    }
+  }, [isDark]);
+
   // Adaptive polling unified (history only)
   useEffect(() => {
     const CRITICAL_BOOST_MS = 2 * 60 * 1000;
@@ -98,32 +117,39 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   const handleLogout = () => { logoutUser(); onBack(); };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="bg-white shadow-sm border-b">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      <div className="bg-white dark:bg-slate-900 shadow-sm border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-4">
             <div className="flex flex-wrap items-center gap-3">
-              <button aria-label="ออกจากระบบ" onClick={handleLogout} className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-slate-100 h-9 px-4 py-2 text-slate-600 hover:text-slate-900">
+              <button aria-label="ออกจากระบบ" onClick={handleLogout} className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 h-9 px-4 py-2 text-slate-600 dark:text-slate-100 hover:text-slate-900">
                 <ArrowLeft className="w-4 h-4 mr-2" />ออกจากระบบ
               </button>
-              <div className="hidden sm:block h-6 w-px bg-slate-300" />
+              <div className="hidden sm:block h-6 w-px bg-slate-300 dark:bg-slate-700" />
               <div className="flex items-center space-x-3 pr-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
                   <Car className="w-4 h-4 text-white" />
                 </div>
                 <div>
                   <h1 className="text-base sm:text-lg font-medium">Dashboard ผู้ขับขี่</h1>
-                  <p className="text-xs sm:text-sm text-slate-600">สวัสดี, {user?.name || "ผู้ขับขี่"}</p>
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">สวัสดี, {user?.name || "ผู้ขับขี่"}</p>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                aria-label={isDark ? "โหมดสว่าง" : "โหมดมืด"}
+                onClick={() => setIsDark((v) => !v)}
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800 h-8 w-8"
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
               <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] sm:text-xs font-semibold ${
-                drivingStatus === "พร้อมขับขี่" ? "border-transparent bg-green-100 text-green-800" : "border-transparent bg-red-100 text-red-800"
+              drivingStatus === "พร้อมขับขี่" ? "border-transparent bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200" : "border-transparent bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200"
               }`}>
                 <Shield className="w-3 h-3 mr-1" />{drivingStatus}
               </span>
-              <button aria-label="ตั้งค่า" onClick={onProfile} className="inline-flex items-center justify-center rounded-md text-xs sm:text-sm font-medium border bg-background shadow-sm hover:bg-slate-100 h-8 px-3">
+              <button aria-label="ตั้งค่า" onClick={onProfile} className="inline-flex items-center justify-center rounded-md text-xs sm:text-sm font-medium border border-slate-200 dark:border-slate-700 bg-background dark:bg-slate-900 shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800 h-8 px-3 dark:text-slate-100">
                 <Settings className="w-4 h-4 mr-2" />ตั้งค่า
               </button>
             </div>
@@ -138,34 +164,34 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
             const themes: Record<string, { border: string; bg: string; iconBg: string; iconColor: string; title: string; text: string; pillBg: string; pillText: string; pillLabel: string } > = {
               low: {
                 border: "border-l-green-500",
-                bg: "bg-green-50",
-                iconBg: "bg-green-100",
-                iconColor: "text-green-600",
-                title: "text-green-900",
-                text: "text-green-700",
-                pillBg: "bg-green-600",
+                bg: "bg-green-50 dark:bg-green-950",
+                iconBg: "bg-green-100 dark:bg-green-900",
+                iconColor: "text-green-600 dark:text-green-300",
+                title: "text-green-900 dark:text-green-100",
+                text: "text-green-700 dark:text-green-200",
+                pillBg: "bg-green-600 dark:bg-green-700",
                 pillText: "text-white",
                 pillLabel: "สถานะ: ปกติ"
               },
               medium: {
                 border: "border-l-yellow-500",
-                bg: "bg-yellow-50",
-                iconBg: "bg-yellow-100",
-                iconColor: "text-yellow-600",
-                title: "text-yellow-900",
-                text: "text-yellow-700",
-                pillBg: "bg-yellow-600",
+                bg: "bg-yellow-50 dark:bg-yellow-950",
+                iconBg: "bg-yellow-100 dark:bg-yellow-900",
+                iconColor: "text-yellow-600 dark:text-yellow-300",
+                title: "text-yellow-900 dark:text-yellow-100",
+                text: "text-yellow-700 dark:text-yellow-200",
+                pillBg: "bg-yellow-600 dark:bg-yellow-700",
                 pillText: "text-white",
                 pillLabel: "สถานะ: ระวัง"
               },
               high: {
                 border: "border-l-red-500",
-                bg: "bg-red-50",
-                iconBg: "bg-red-100",
-                iconColor: "text-red-600",
-                title: "text-red-900",
-                text: "text-red-700",
-                pillBg: "bg-red-600",
+                bg: "bg-red-50 dark:bg-red-950",
+                iconBg: "bg-red-100 dark:bg-red-900",
+                iconColor: "text-red-600 dark:text-red-300",
+                title: "text-red-900 dark:text-red-100",
+                text: "text-red-700 dark:text-red-200",
+                pillBg: "bg-red-600 dark:bg-red-700",
                 pillText: "text-white",
                 pillLabel: "สถานะ: อันตราย"
               }
@@ -188,75 +214,75 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
               </div>
             );
           })()}
-          <div className="rounded-xl border bg-gradient-to-br from-orange-50 to-yellow-50 border-orange-200 shadow p-4 sm:p-6 flex flex-col justify-center">
+          <div className="rounded-xl border bg-gradient-to-br from-orange-50 to-yellow-50 dark:from-orange-950 dark:to-yellow-950 border-orange-200 dark:border-orange-800 shadow p-4 sm:p-6 flex flex-col justify-center">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm text-orange-700">เหตุการณ์สถานะวันนี้</h3>
-              <AlertTriangle className="w-5 h-5 text-orange-600" />
+              <h3 className="font-semibold text-sm text-orange-700 dark:text-orange-300">เหตุการณ์สถานะวันนี้</h3>
+              <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-300" />
             </div>
-            <div className="text-3xl font-bold text-orange-900 mb-1">{driverStats.eventsToday}</div>
-            <div className="text-sm text-orange-600">ครั้ง</div>
-            <div className="text-xs text-orange-500 mt-1">ล่าสุด: {driverStats.lastEvent}</div>
+            <div className="text-3xl font-bold text-orange-900 dark:text-orange-300 mb-1">{driverStats.eventsToday}</div>
+            <div className="text-sm text-orange-600 dark:text-orange-300">ครั้ง</div>
+            <div className="text-xs text-orange-500 dark:text-orange-200 mt-1">ล่าสุด: {driverStats.lastEvent}</div>
           </div>
         </div>
 
         <div className="space-y-8">
-          <div className="rounded-xl border bg-white shadow">
-            <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
+          <div className="rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800 rounded-t-xl">
               <div className="flex items-center space-x-2">
-                <Bell className="w-5 h-5 text-blue-600" />
+                <Bell className="w-5 h-5 text-blue-600 dark:text-blue-300" />
                 <h3 className="font-semibold">เหตุการณ์สถานะวันนี้</h3>
               </div>
-              <p className="text-sm text-slate-500">สตรีมสถานะ (Normal แสดงครั้งเดียวต่อช่วง / ระวัง & อันตราย แสดงทุกครั้ง)</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">สตรีมสถานะ (Normal แสดงครั้งเดียวต่อช่วง / ระวัง & อันตราย แสดงทุกครั้ง)</p>
             </div>
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <div className="text-sm text-slate-600">จำนวนล่าสุดที่แสดง</div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">จำนวนล่าสุดที่แสดง</div>
                 <div className="flex items-center gap-2">
                   {[5,10,15].map(v => (
                     <button
                       key={v}
                       onClick={() => setAlertDisplayLimit(v)}
-                      className={`h-8 px-3 text-xs rounded-md border transition ${alertDisplayLimit===v? 'bg-blue-600 text-white border-blue-600':'bg-white text-slate-700 hover:bg-slate-100 border-slate-300'}`}
+                      className={`h-8 px-3 text-xs rounded-md border transition ${alertDisplayLimit===v? 'bg-blue-600 text-white border-blue-600':'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-700'}`}
                     >{v}</button>
                   ))}
                 </div>
               </div>
               <div className="space-y-3">
                 {displayEvents.map((evt, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
+                  <div key={index} className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
                     <div className="flex items-center space-x-4">
                       <div className={`w-4 h-4 rounded-full ${evt.severity === "warning" ? "bg-yellow-500" : evt.severity === "danger" ? "bg-red-500" : evt.severity === "success" ? "bg-green-500" : "bg-blue-500"}`} />
                       <div>
-                        <div className="font-medium text-slate-800">{evt.label}</div>
-                        <div className="text-xs text-slate-500">{
+                        <div className="font-medium text-slate-800 dark:text-slate-100">{evt.label}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{
                           evt.severity === "warning" ? "ระดับระวัง" : evt.severity === "danger" ? "ระดับอันตราย" : evt.severity === "success" ? "สถานะปกติ" : "ข้อมูลทั่วไป"
                         }</div>
                       </div>
                     </div>
-                    <div className="text-sm text-slate-600 bg-white px-3 py-1 rounded-full border">{evt.time}</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-200 bg-white dark:bg-slate-900 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-600">{evt.time}</div>
                   </div>
                 ))}
               </div>
               {displayEvents.length === 0 && (
-                <div className="text-center py-8 text-slate-500">
-                  <Bell className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                  <Bell className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
                   <p>ยังไม่มีข้อมูลสถานะในวันนี้</p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-xl border bg-card shadow">
+          <div className="rounded-xl border bg-card dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow">
             <div className="p-6 border-b">
               <div className="flex items-center space-x-2">
                 <Activity className="w-5 h-5" />
                 <h3 className="font-semibold">ประวัติการแจ้งเตือนวันนี้</h3>
               </div>
-              <p className="text-sm text-slate-500">แนวโน้มการแจ้งเตือน (06:00-24:00)</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">แนวโน้มการแจ้งเตือน (06:00-24:00)</p>
             </div>
             <div className="p-6">
-              <div className="h-56 sm:h-64 bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg p-2 border border-slate-200 overflow-hidden">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4 px-2 pb-2 text-[10px] text-slate-600">
+              <div className="h-56 sm:h-64 bg-gradient-to-br from-blue-50 to-slate-50 dark:from-slate-900 dark:to-slate-800 rounded-lg p-2 border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 px-2 pb-2 text-[10px] text-slate-600 dark:text-slate-300">
                   <div className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-yellow-400" /> ระวัง</div>
                   <div className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-500" /> อันตราย</div>
                   <div className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-slate-300" /> ไม่มีเหตุการณ์</div>
@@ -286,7 +312,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
                         <div key={s.label} className="flex flex-col items-center flex-1 min-w-[42px]">
                           <div className="w-full max-w-[30px] mb-1 flex flex-col justify-end">
                             {total === 0 && (
-                              <div className="h-2 w-full rounded bg-slate-300" />
+                              <div className="h-2 w-full rounded bg-slate-300 dark:bg-slate-600" />
                             )}
                             {total > 0 && (
                               <div className="w-full flex flex-col justify-end">
@@ -297,8 +323,8 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
                               </div>
                             )}
                           </div>
-                          <div className="text-[10px] text-slate-600 whitespace-nowrap">{s.label}</div>
-                          <div className="text-[10px] text-slate-500">{total}</div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-300 whitespace-nowrap">{s.label}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-300">{total}</div>
                         </div>
                       );
                     });

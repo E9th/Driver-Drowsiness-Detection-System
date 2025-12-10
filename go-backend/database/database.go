@@ -153,6 +153,7 @@ func Migrate() error {
 			email VARCHAR(255) UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
 			name VARCHAR(100),
+			phone VARCHAR(50),
 			role VARCHAR(50) DEFAULT 'driver',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
@@ -161,30 +162,42 @@ func Migrate() error {
 		return err
 	}
 
+	// Ensure phone column exists even if users table was created earlier
+	_, _ = DB.Exec(`
+		ALTER TABLE users
+		ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+	`)
+
 	log.Println("✅ Database migrations completed successfully")
 	return nil
 }
 
 // CreateUser inserts a new user
-func CreateUser(email, passwordHash, name, role string) (int, error) {
+func CreateUser(email, passwordHash, name, role, phone string) (int, error) {
 	var id int
 	err := DB.QueryRow(`
-		INSERT INTO users (email, password_hash, name, role)
-		VALUES ($1, $2, $3, COALESCE($4, 'driver'))
+		INSERT INTO users (email, password_hash, name, role, phone)
+		VALUES ($1, $2, $3, COALESCE($4, 'driver'), $5)
 		RETURNING id
-	`, email, passwordHash, name, role).Scan(&id)
+	`, email, passwordHash, name, role, phone).Scan(&id)
 	return id, err
 }
 
 // GetUserByEmail retrieves user by email
 func GetUserByEmail(email string) (*models.User, error) {
 	var u models.User
+	var phone sql.NullString
 	err := DB.QueryRow(`
-		SELECT id, email, password_hash, name, role, created_at
+		SELECT id, email, password_hash, name, phone, role, created_at
 		FROM users WHERE email = $1
-	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt)
+	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &phone, &u.Role, &u.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if phone.Valid {
+		u.Phone = phone.String
+	} else {
+		u.Phone = ""
 	}
 	return &u, nil
 }
@@ -192,12 +205,18 @@ func GetUserByEmail(email string) (*models.User, error) {
 // GetUserByID retrieves user by id
 func GetUserByID(id int) (*models.User, error) {
 	var u models.User
+	var phone sql.NullString
 	err := DB.QueryRow(`
-		SELECT id, email, password_hash, name, role, created_at
+		SELECT id, email, password_hash, name, phone, role, created_at
 		FROM users WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &phone, &u.Role, &u.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if phone.Valid {
+		u.Phone = phone.String
+	} else {
+		u.Phone = ""
 	}
 	return &u, nil
 }
