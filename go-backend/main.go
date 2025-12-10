@@ -76,18 +76,15 @@ func setupRouter() *gin.Engine {
 
 	router := gin.Default()
 
-	// CORS middleware - allow requests from React frontend
+	// CORS middleware - relax policy to allow all origins (no cookies)
 	router.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:3000",
-			"http://localhost:5173",
-		},
-		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowAllOrigins: true,
+		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders: []string{
 			"Origin", "Content-Type", "Authorization", "Accept", "Cache-Control", "Pragma",
 		},
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           43200, // 12 hours
 	}))
 
