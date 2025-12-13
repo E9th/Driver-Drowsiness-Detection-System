@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -36,6 +36,7 @@ import {
   Calendar,
   Hash
 } from "lucide-react";
+import { getToken } from "../utils/auth";
 
 interface MasterDashboardProps {
   onBack: () => void;
@@ -47,7 +48,13 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
   const [showExportReport, setShowExportReport] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<any>(null);
 
-  // Mock data - ปรับให้เหมาะกับข้อมูลรายวัน
+  const [driverOverview, setDriverOverview] = useState<{ totalDrivers: number; activeDrivers: number; totalDevices: number }>({
+    totalDrivers: 0,
+    activeDrivers: 0,
+    totalDevices: 0,
+  });
+
+  // Mock data สำหรับส่วนอื่น ๆ ของ dashboard (ยังใช้ค่าคงที่ต่อไป)
   const overallStats = {
     totalDrivers: 48,
     activeDrivers: 36,
@@ -56,6 +63,36 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     totalFleet: 52,
     bannedDrivers: 2 // ผู้ขับขี่ที่ถูกแบน
   };
+
+  // ดึงข้อมูลผู้ขับขี่ทั้งหมด + จำนวนที่กำลังขับขี่จาก backend (PostgreSQL)
+  useEffect(() => {
+    const API_BASE = import.meta?.env?.VITE_API_BASE || "http://localhost:8080/api";
+
+    async function fetchOverview() {
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/admin/overview`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setDriverOverview({
+          totalDrivers: typeof data.total_drivers === "number" ? data.total_drivers : 0,
+          activeDrivers: typeof data.active_drivers === "number" ? data.active_drivers : 0,
+          totalDevices: typeof data.total_devices === "number" ? data.total_devices : 0,
+        });
+      } catch {
+        // fallback: ไม่ทำอะไร ปล่อยให้ค่า default เป็น 0
+      }
+    }
+
+    fetchOverview();
+    const id = setInterval(fetchOverview, 600000); // รีเฟรชทุก 10 นาที
+    return () => clearInterval(id);
+  }, []);
 
   const [driverList, setDriverList] = useState([
     { id: 1, name: "สมชาย ใจดี", vehicleId: "ABC-1234", status: "ขับขี่", alerts: 0, safetyScore: 98, location: "ถนนสุขุมวิท", email: "somchai@email.com", isBanned: false },
@@ -156,27 +193,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Critical Alerts Banner */}
-        {overallStats.criticalAlerts > 0 && (
-          <div className="mb-6">
-            <Card className="border-l-4 border-l-red-500 bg-red-50">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <AlertTriangle className="w-6 h-6 text-red-600" />
-                    <div>
-                      <h3 className="font-medium text-red-900">การแจ้งเตือนด่วน</h3>
-                      <p className="text-red-700">มีผู้ขับขี่ {overallStats.criticalAlerts} คน ที่ต้องการความสนใจเร่งด่วน</p>
-                    </div>
-                  </div>
-                  <Button variant="destructive" size="sm">
-                    ดูรายละเอียด
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        {/* Critical Alerts Banner removed as requested */}
 
         {/* Stats Overview (removed hoursToday & safetyScore) */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6 mb-6 lg:mb-8">
@@ -188,9 +205,9 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900">{overallStats.totalDrivers}</div>
+              <div className="text-2xl font-bold text-slate-900">{driverOverview.totalDrivers}</div>
               <div className="text-sm text-green-600 flex items-center space-x-1">
-                <span>กำลังขับขี่: {overallStats.activeDrivers} คน</span>
+                <span>กำลังขับขี่: {driverOverview.activeDrivers} คน</span>
               </div>
             </CardContent>
           </Card>
@@ -203,10 +220,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900">{overallStats.totalFleet}</div>
-              <div className="text-sm text-slate-600">
-                ใช้งาน: {overallStats.activeDrivers} คัน
-              </div>
+	              <div className="text-2xl font-bold text-slate-900">{driverOverview.totalDevices}</div>
             </CardContent>
           </Card>
 
@@ -254,7 +268,6 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                         <TableHead className="min-w-[100px]">รหัสรถ</TableHead>
                         <TableHead className="min-w-[80px]">สถานะ</TableHead>
                         <TableHead className="min-w-[80px]">แจ้งเตือน</TableHead>
-                        <TableHead className="min-w-[100px]">คะแนน</TableHead>
                         <TableHead className="min-w-[120px]">การดำเนินการ</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -281,16 +294,6 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                               {driver.alerts}
                             </span>
                             {driver.alerts > 3 && <AlertTriangle className="w-4 h-4 text-red-500" />}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <span className={driver.safetyScore < 80 ? 'text-red-600' : driver.safetyScore < 90 ? 'text-orange-600' : 'text-green-600'}>
-                              {driver.safetyScore}
-                            </span>
-                            <div className="w-16">
-                              <Progress value={driver.safetyScore} className="h-1" />
-                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -487,38 +490,6 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
 
             {/* Performance Metrics - ปรับให้แสดงข้อมูลวันนี้ */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 lg:gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <TrendingUp className="w-5 h-5 text-green-500" />
-                    <span>สถิติวันนี้</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">ผู้ขับขี่ปลอดภัย</span>
-                      <span className="text-sm text-green-600">46/48 คน</span>
-                    </div>
-                    <Progress value={96} className="h-2" />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">คะแนนเฉลี่ยวันนี้</span>
-                      <span className="text-sm text-blue-600">92 คะแนน</span>
-                    </div>
-                    <Progress value={92} className="h-2" />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">ผู้ขับขี่ที่ถูกแบน</span>
-                      <span className="text-sm text-red-600">{overallStats.bannedDrivers} คน</span>
-                    </div>
-                    <Progress value={(overallStats.bannedDrivers / overallStats.totalDrivers) * 100} className="h-2" />
-                  </div>
-                </CardContent>
-              </Card>
-
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">

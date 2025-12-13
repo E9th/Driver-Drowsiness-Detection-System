@@ -117,6 +117,12 @@ func setupRouter() *gin.Engine {
 			devices.GET("/:id/history", handlers.GetDeviceHistory) // Frontend gets history
 			devices.GET("/:id/alerts", handlers.GetDeviceAlerts)   // Frontend gets alerts
 		}
+
+		// Admin routes (protected)
+		admin := api.Group("/admin", handlers.AuthMiddleware())
+		{
+			admin.GET("/overview", handlers.AdminOverview)
+		}
 	}
 
 	// Log all routes

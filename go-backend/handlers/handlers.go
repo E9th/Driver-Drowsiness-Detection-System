@@ -304,6 +304,74 @@ func GetAllDevices(c *gin.Context) {
 	})
 }
 
+// AdminOverview returns aggregated statistics for master dashboard
+// - total_drivers: จำนวนผู้ขับขี่ทั้งหมดจาก users (role='driver') + mock_drivers
+// - active_drivers: จำนวนผู้ขับขี่ที่มีการอัปเดตล่าสุดภายใน 5 นาที (เฉพาะข้อมูลของวันที่ปัจจุบัน)
+//   - ข้อมูลจริงอ้างอิงจาก drowsiness_data ผ่าน devices -> users
+//   - ข้อมูล mock อ้างอิงจาก mock_drowsiness_events -> mock_drivers
+//
+// - total_devices: จำนวน device id ทั้งหมดจาก devices (จริง) + mock_drowsiness_events (mock)
+func AdminOverview(c *gin.Context) {
+	var totalDrivers int
+	var activeDrivers int
+	var totalDevices int
+
+	// Aggregate in a single query for consistency
+	query := `
+SELECT
+	COALESCE((SELECT COUNT(*) FROM mock_drivers), 0)
+	+ COALESCE((SELECT COUNT(*) FROM users WHERE role = 'driver'), 0) AS total_drivers,
+	(
+		COALESCE((
+			SELECT COUNT(DISTINCT u.id)
+			FROM users u
+			JOIN devices d ON d.user_id = u.id
+			JOIN LATERAL (
+				SELECT timestamp
+				FROM drowsiness_data dd
+				WHERE dd.device_id = d.id
+					AND dd.timestamp::date = CURRENT_DATE
+				ORDER BY dd.timestamp DESC, dd.id DESC
+				LIMIT 1
+			) last ON TRUE
+			WHERE u.role = 'driver'
+				AND last.timestamp >= NOW() - INTERVAL '5 minutes'
+		), 0)
+		+
+		COALESCE((
+			SELECT COUNT(*) FROM (
+				SELECT md.driver_code, MAX(e.timestamp) AS last_ts
+				FROM mock_drivers md
+				LEFT JOIN mock_drowsiness_events e
+					ON e.driver_code = md.driver_code
+				 AND e.timestamp::date = CURRENT_DATE
+				GROUP BY md.driver_code
+			) x
+			WHERE x.last_ts IS NOT NULL
+				AND x.last_ts >= NOW() - INTERVAL '5 minutes'
+		), 0)
+	) AS active_drivers,
+	(
+		COALESCE((SELECT COUNT(DISTINCT id) FROM devices), 0)
+		+
+		COALESCE((SELECT COUNT(DISTINCT device_id) FROM mock_drowsiness_events), 0)
+	) AS total_devices;
+`
+
+	if err := database.DB.QueryRow(query).Scan(&totalDrivers, &activeDrivers, &totalDevices); err != nil {
+		log.Printf("❌ Error fetching admin overview stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch overview stats"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_drivers":  totalDrivers,
+		"active_drivers": activeDrivers,
+		"total_devices":  totalDevices,
+		"generated_at":   time.Now().Format(time.RFC3339),
+	})
+}
+
 // ================== AUTH HANDLERS & MIDDLEWARE ==================
 
 // Register creates a new user account

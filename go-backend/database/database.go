@@ -239,7 +239,7 @@ func GetUserByID(id int) (*models.User, error) {
 }
 
 // SeedDevices inserts sample devices for testing
-func SeedDevices() error {
+/*func SeedDevices() error {
 	log.Println("🌱 Seeding sample devices...")
 
 	devices := []struct {
@@ -264,7 +264,7 @@ func SeedDevices() error {
 
 	log.Println("✅ Sample devices seeded")
 	return nil
-}
+}*/
 
 // PurgeNonTodayData deletes records not from the current UTC date
 // If you need local timezone day-based retention, adjust the query accordingly.
