@@ -1,5 +1,4 @@
 import { HeroSection } from "./HeroSection";
-import hero2 from "./image/hero_2.jpg";
 import { StatisticsSection } from "./StatisticsSection";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -15,7 +14,7 @@ export function HomePage() {
       <section
           className="py-16"
         style={{
-          backgroundImage: `url(${hero2})`,
+          backgroundImage: "url(https://i.ibb.co/4Zjbn83L/hero-2.png)",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}

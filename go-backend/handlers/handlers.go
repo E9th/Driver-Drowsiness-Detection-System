@@ -327,7 +327,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	userID, err := database.CreateUser(req.Email, string(hash), req.Name, "driver", req.Phone)
+	userID, err := database.CreateUser(req.Email, string(hash), req.Name, "driver", req.Phone, req.UserType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
@@ -353,6 +353,7 @@ func Register(c *gin.Context) {
 	resp.User.Role = "driver"
 	resp.User.Phone = req.Phone
 	resp.User.DeviceID = req.DeviceID
+	resp.User.UserType = req.UserType
 
 	c.JSON(http.StatusCreated, resp)
 }
@@ -393,6 +394,7 @@ func Login(c *gin.Context) {
 	resp.User.Role = user.Role
 	resp.User.Phone = user.Phone
 	resp.User.DeviceID = deviceID
+	resp.User.UserType = user.UserType
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -416,6 +418,7 @@ func Me(c *gin.Context) {
 		"name":      user.Name,
 		"role":      user.Role,
 		"phone":     user.Phone,
+		"user_type": user.UserType,
 		"device_id": deviceID,
 	})
 }

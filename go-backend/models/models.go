@@ -59,6 +59,7 @@ type User struct {
 	Name         string    `json:"name" db:"name"`
 	Phone        string    `json:"phone" db:"phone"`
 	Role         string    `json:"role" db:"role"`
+	UserType     string    `json:"user_type" db:"user_type"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -69,6 +70,7 @@ type RegisterRequest struct {
 	Name     string `json:"name"`
 	DeviceID string `json:"device_id"`
 	Phone    string `json:"phone"`
+	UserType string `json:"user_type"`
 }
 
 // LoginRequest represents incoming login payload
@@ -87,5 +89,6 @@ type AuthResponse struct {
 		Role     string `json:"role"`
 		Phone    string `json:"phone,omitempty"`
 		DeviceID string `json:"device_id,omitempty"`
+		UserType string `json:"user_type,omitempty"`
 	} `json:"user"`
 }

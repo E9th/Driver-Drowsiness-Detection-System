@@ -44,7 +44,14 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
     try {
       setLoading(true);
       const name = `${formData.firstName} ${formData.lastName}`.trim();
-      const result = await register(formData.email, formData.password, name, formData.deviceId, formData.phone);
+      const result = await register(
+        formData.email,
+        formData.password,
+        name,
+        formData.deviceId,
+        formData.phone,
+        formData.userType
+      );
       await refresh();
       // Navigate based on role
       if (result.user.role === 'admin') {
@@ -197,21 +204,24 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
                       placeholder="สร้างรหัสผ่าน"
                       value={formData.password}
                       onChange={(e) => handleInputChange("password", e.target.value)}
+                      className="pr-10"
                       required
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-auto p-1 hover:bg-transparent"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="w-4 h-4 text-gray-500" />
-                      ) : (
-                        <Eye className="w-4 h-4 text-gray-500" />
-                      )}
-                    </Button>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-gray-500" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
                 

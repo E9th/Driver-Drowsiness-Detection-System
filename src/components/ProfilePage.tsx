@@ -19,6 +19,14 @@ interface ProfilePageProps {
   onBack: () => void;
 }
 
+const getUserTypeLabel = (userType?: string) => {
+  if (!userType) return "";
+  if (userType === "fleet-manager") return "ผู้จัดการกลุ่มรถ";
+  if (userType === "transport-company") return "บริษัทขนส่ง";
+  if (userType === "individual-driver") return "ผู้ขับขี่รายบุคคล";
+  return userType;
+};
+
 export function ProfilePage({ onBack }: ProfilePageProps) {
   const { user } = useAuth();
   const deviceId = user?.device_id || "device_01";
@@ -28,7 +36,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     name: user?.name || "",
     email: user?.email || "",
     phone: user?.phone || "",
-    driverId: user ? `DRV-${user.id}` : "",
+    userType: getUserTypeLabel(user?.user_type),
     vehicleId: deviceId
   });
 
@@ -39,7 +47,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
       name: user.name,
       email: user.email,
       phone: user.phone || prev.phone,
-      driverId: `DRV-${user.id}`,
+      userType: getUserTypeLabel(user.user_type),
       vehicleId: user.device_id || prev.vehicleId
     }));
   }, [user, isEditing]);
@@ -112,10 +120,10 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="driverId">รหัสผู้ขับขี่</Label>
+                    <Label htmlFor="userType">ประเภทผู้ใช้งาน</Label>
                     <Input
-                      id="driverId"
-                      value={profileData.driverId}
+                      id="userType"
+                      value={profileData.userType}
                       disabled
                       className="bg-slate-100 dark:bg-slate-800"
                     />

@@ -155,6 +155,7 @@ func Migrate() error {
 			name VARCHAR(100),
 			phone VARCHAR(50),
 			role VARCHAR(50) DEFAULT 'driver',
+			user_type VARCHAR(50),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
@@ -162,10 +163,14 @@ func Migrate() error {
 		return err
 	}
 
-	// Ensure phone column exists even if users table was created earlier
+	// Ensure profile columns exist even if users table was created earlier
 	_, _ = DB.Exec(`
 		ALTER TABLE users
 		ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+	`)
+	_, _ = DB.Exec(`
+		ALTER TABLE users
+		ADD COLUMN IF NOT EXISTS user_type VARCHAR(50);
 	`)
 
 	log.Println("✅ Database migrations completed successfully")
@@ -173,13 +178,13 @@ func Migrate() error {
 }
 
 // CreateUser inserts a new user
-func CreateUser(email, passwordHash, name, role, phone string) (int, error) {
+func CreateUser(email, passwordHash, name, role, phone, userType string) (int, error) {
 	var id int
 	err := DB.QueryRow(`
-		INSERT INTO users (email, password_hash, name, role, phone)
-		VALUES ($1, $2, $3, COALESCE($4, 'driver'), $5)
+		INSERT INTO users (email, password_hash, name, role, phone, user_type)
+		VALUES ($1, $2, $3, COALESCE($4, 'driver'), $5, $6)
 		RETURNING id
-	`, email, passwordHash, name, role, phone).Scan(&id)
+	`, email, passwordHash, name, role, phone, userType).Scan(&id)
 	return id, err
 }
 
@@ -187,10 +192,11 @@ func CreateUser(email, passwordHash, name, role, phone string) (int, error) {
 func GetUserByEmail(email string) (*models.User, error) {
 	var u models.User
 	var phone sql.NullString
+	var userType sql.NullString
 	err := DB.QueryRow(`
-		SELECT id, email, password_hash, name, phone, role, created_at
+		SELECT id, email, password_hash, name, phone, role, user_type, created_at
 		FROM users WHERE email = $1
-	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &phone, &u.Role, &u.CreatedAt)
+	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &phone, &u.Role, &userType, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +204,11 @@ func GetUserByEmail(email string) (*models.User, error) {
 		u.Phone = phone.String
 	} else {
 		u.Phone = ""
+	}
+	if userType.Valid {
+		u.UserType = userType.String
+	} else {
+		u.UserType = ""
 	}
 	return &u, nil
 }
@@ -206,10 +217,11 @@ func GetUserByEmail(email string) (*models.User, error) {
 func GetUserByID(id int) (*models.User, error) {
 	var u models.User
 	var phone sql.NullString
+	var userType sql.NullString
 	err := DB.QueryRow(`
-		SELECT id, email, password_hash, name, phone, role, created_at
+		SELECT id, email, password_hash, name, phone, role, user_type, created_at
 		FROM users WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &phone, &u.Role, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &phone, &u.Role, &userType, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +229,11 @@ func GetUserByID(id int) (*models.User, error) {
 		u.Phone = phone.String
 	} else {
 		u.Phone = ""
+	}
+	if userType.Valid {
+		u.UserType = userType.String
+	} else {
+		u.UserType = ""
 	}
 	return &u, nil
 }

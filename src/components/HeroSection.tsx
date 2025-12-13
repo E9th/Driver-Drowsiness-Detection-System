@@ -1,13 +1,12 @@
 import { Shield } from "lucide-react";
 import teaser from "./image/gif/teaser.gif";
-import heroBg from "./image/hero_1.jpg";
 
 export function HeroSection() {
   return (
     <section
       className="relative flex items-center py-8 sm:py-12 lg:py-15"
       style={{
-        backgroundImage: `url(${heroBg})`,
+        backgroundImage: "url(https://i.ibb.co/nNSyr93b/hero-1.png)",
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}

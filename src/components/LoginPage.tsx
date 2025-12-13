@@ -90,21 +90,24 @@ export function LoginPage({ onBack, onSwitchToSignup, onDriverDashboard, onMaste
                     placeholder="กรอกรหัสผ่านของคุณ"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    className="pr-10"
                     required
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-auto p-1 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4 text-gray-500" />
-                    ) : (
-                      <Eye className="w-4 h-4 text-gray-500" />
-                    )}
-                  </Button>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-transparent"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-gray-500" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -125,29 +128,6 @@ export function LoginPage({ onBack, onSwitchToSignup, onDriverDashboard, onMaste
                 {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
               </Button>
             </form>
-
-            {/* Demo Buttons */}
-            <div className="mt-6 space-y-3">
-              <div className="text-center">
-                <p className="text-sm text-gray-500 mb-3">ทดลองใช้งาน (Demo)</p>
-              </div>
-              <Button 
-                onClick={onDriverDashboard}
-                variant="outline" 
-                className="w-full border-green-200 hover:bg-green-50"
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                เข้าสู่ Dashboard ผู้ขับขี่
-              </Button>
-              <Button 
-                onClick={onMasterDashboard}
-                variant="outline" 
-                className="w-full border-purple-200 hover:bg-purple-50"
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                เข้าสู่ Master Dashboard (Admin)
-              </Button>
-            </div>
 
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600">
