@@ -51,6 +51,16 @@ type AlertPayload struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
+// AdminDriverSummary is a compact view for master dashboard driver list
+type AdminDriverSummary struct {
+	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	DeviceID            string `json:"device_id"`
+	IsOnline            bool   `json:"is_online"`
+	CriticalAlertsToday int    `json:"critical_alerts_today"`
+	Source              string `json:"source"` // "real" or "mock"
+}
+
 // User represents an application user (for authentication)
 type User struct {
 	ID           int       `json:"id" db:"id"`

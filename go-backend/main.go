@@ -38,11 +38,6 @@ func main() {
 	// Schedule daily purge at midnight UTC
 	database.ScheduleDailyPurge()
 
-	// Seed sample devices (for testing)
-	if err := database.SeedDevices(); err != nil {
-		log.Printf("⚠️ Warning: Failed to seed devices: %v", err)
-	}
-
 	// Setup Gin router
 	router := setupRouter()
 
@@ -122,6 +117,7 @@ func setupRouter() *gin.Engine {
 		admin := api.Group("/admin", handlers.AuthMiddleware())
 		{
 			admin.GET("/overview", handlers.AdminOverview)
+			admin.GET("/drivers", handlers.AdminDrivers)
 		}
 	}
 

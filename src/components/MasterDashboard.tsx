@@ -7,10 +7,6 @@ import { Progress } from "./ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Switch } from "./ui/switch";
 import { Separator } from "./ui/separator";
 import { 
   ArrowLeft, 
@@ -28,9 +24,6 @@ import {
   BarChart3,
   Eye,
   Download,
-  Edit,
-  UserX,
-  UserCheck,
   Save,
   FileText,
   Calendar,
@@ -44,14 +37,19 @@ interface MasterDashboardProps {
 
 export function MasterDashboard({ onBack }: MasterDashboardProps) {
   const [selectedTimeRange, setSelectedTimeRange] = useState("today");
-  const [showSettings, setShowSettings] = useState(false);
-  const [showExportReport, setShowExportReport] = useState(false);
-  const [selectedDriver, setSelectedDriver] = useState<any>(null);
 
-  const [driverOverview, setDriverOverview] = useState<{ totalDrivers: number; activeDrivers: number; totalDevices: number }>({
+  const [driverOverview, setDriverOverview] = useState<{
+    totalDrivers: number;
+    activeDrivers: number;
+    totalDevices: number;
+    alertsToday: number;
+    criticalAlertsToday: number;
+  }>({
     totalDrivers: 0,
     activeDrivers: 0,
     totalDevices: 0,
+    alertsToday: 0,
+    criticalAlertsToday: 0,
   });
 
   // Mock data สำหรับส่วนอื่น ๆ ของ dashboard (ยังใช้ค่าคงที่ต่อไป)
@@ -83,25 +81,52 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
           totalDrivers: typeof data.total_drivers === "number" ? data.total_drivers : 0,
           activeDrivers: typeof data.active_drivers === "number" ? data.active_drivers : 0,
           totalDevices: typeof data.total_devices === "number" ? data.total_devices : 0,
-        });
+          alertsToday: typeof data.alerts_today === "number" ? data.alerts_today : 0,
+          criticalAlertsToday:
+            typeof data.critical_alerts_today === "number" ? data.critical_alerts_today : 0,
+          });
       } catch {
         // fallback: ไม่ทำอะไร ปล่อยให้ค่า default เป็น 0
       }
     }
 
+    async function fetchDrivers() {
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/admin/drivers`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setDriverList(Array.isArray(data.drivers) ? data.drivers : []);
+      } catch {
+        // fallback: keep current list
+      }
+    }
+
     fetchOverview();
-    const id = setInterval(fetchOverview, 600000); // รีเฟรชทุก 10 นาที
-    return () => clearInterval(id);
+    fetchDrivers();
+    const overviewId = setInterval(fetchOverview, 600000); // รีเฟรช overview ทุก 10 นาที
+    const driversId = setInterval(fetchDrivers, 30000); // รีเฟรชรายการผู้ขับขี่ทุก 30 วินาที
+    return () => {
+      clearInterval(overviewId);
+      clearInterval(driversId);
+    };
   }, []);
 
-  const [driverList, setDriverList] = useState([
-    { id: 1, name: "สมชาย ใจดี", vehicleId: "ABC-1234", status: "ขับขี่", alerts: 0, safetyScore: 98, location: "ถนนสุขุมวิท", email: "somchai@email.com", isBanned: false },
-    { id: 2, name: "สมหญิง รักดี", vehicleId: "DEF-5678", status: "พักผ่อน", alerts: 1, safetyScore: 95, location: "ถนนพหลโยธิน", email: "somying@email.com", isBanned: false },
-    { id: 3, name: "วิชัย มั่นคง", vehicleId: "GHI-9012", status: "ขับขี่", alerts: 2, safetyScore: 88, location: "ถนนรามคำแหง", email: "wichai@email.com", isBanned: false },
-    { id: 4, name: "สุพล แข็งแรง", vehicleId: "JKL-3456", status: "เตือนภัย", alerts: 5, safetyScore: 45, location: "ถนนลาดพร้าว", email: "supon@email.com", isBanned: true }, // แบนอัตโนมัติเพราะคะแนนต่ำกว่า 50
-    { id: 5, name: "มานะ อุตสาห์", vehicleId: "MNO-7890", status: "ขับขี่", alerts: 1, safetyScore: 92, location: "ถนนวิภาวดี", email: "mana@email.com", isBanned: false },
-    { id: 6, name: "ปิยะ สุขใส", vehicleId: "PQR-1357", status: "แบน", alerts: 8, safetyScore: 38, location: "-", email: "piya@email.com", isBanned: true } // แบนอัตโนมัติ
-  ]);
+  type AdminDriverRow = {
+    id: string;
+    name: string;
+    device_id: string;
+    is_online: boolean;
+    critical_alerts_today: number;
+    source: string;
+  };
+
+  const [driverList, setDriverList] = useState<AdminDriverRow[]>([]);
 
   // ลบประเภท "การยืดตัว" ออกตามที่ระบุ
   const recentAlerts = [
@@ -111,43 +136,6 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     { time: "11:20", driver: "มานะ อุตสาห์", type: "เหนื่อยล้าเล็กน้อย", severity: "warning", vehicleId: "MNO-7890" },
     { time: "10:05", driver: "สมชาย ใจดี", type: "ปกติ", severity: "success", vehicleId: "ABC-1234" }
   ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ขับขี่': return 'bg-green-100 text-green-800';
-      case 'พักผ่อน': return 'bg-blue-100 text-blue-800';
-      case 'เตือนภัย': return 'bg-red-100 text-red-800';
-      case 'แบน': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const handleDriverUpdate = (updatedDriver: any) => {
-    setDriverList(drivers => 
-      drivers.map(driver => 
-        driver.id === updatedDriver.id ? updatedDriver : driver
-      )
-    );
-    setSelectedDriver(null);
-    setShowSettings(false);
-  };
-
-  const handleBanToggle = (driverId: number) => {
-    setDriverList(drivers => 
-      drivers.map(driver => {
-        if (driver.id === driverId) {
-          const newStatus = driver.isBanned ? 
-            (driver.safetyScore >= 50 ? "พักผ่อน" : "เตือนภัย") : "แบน";
-          return {
-            ...driver,
-            isBanned: !driver.isBanned,
-            status: newStatus
-          };
-        }
-        return driver;
-      })
-    );
-  };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -232,10 +220,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{overallStats.alertsToday}</div>
-              <div className="text-sm text-red-600">
-                ด่วน: {overallStats.criticalAlerts} ครั้ง
-              </div>
+	              <div className="text-2xl font-bold text-orange-600">{driverOverview.alertsToday}</div>
             </CardContent>
           </Card>
         </div>
@@ -268,71 +253,36 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                         <TableHead className="min-w-[100px]">รหัสรถ</TableHead>
                         <TableHead className="min-w-[80px]">สถานะ</TableHead>
                         <TableHead className="min-w-[80px]">แจ้งเตือน</TableHead>
-                        <TableHead className="min-w-[120px]">การดำเนินการ</TableHead>
                       </TableRow>
                     </TableHeader>
-                  <TableBody>
-                    {driverList.map((driver) => (
-                      <TableRow key={driver.id}>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center">
-                              <Users className="w-4 h-4 text-slate-600" />
+                    <TableBody>
+                      {driverList.map((driver) => (
+                        <TableRow key={driver.id}>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center">
+                                <Users className="w-4 h-4 text-slate-600" />
+                              </div>
+                              <span className="font-medium">{driver.name}</span>
                             </div>
-                            <span className="font-medium">{driver.name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{driver.vehicleId}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(driver.status)}>
-                            {driver.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <span className={driver.alerts > 3 ? 'text-red-600 font-medium' : 'text-slate-900'}>
-                              {driver.alerts}
-                            </span>
-                            {driver.alerts > 3 && <AlertTriangle className="w-4 h-4 text-red-500" />}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-1 lg:space-x-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedDriver(driver);
-                                setShowSettings(true);
-                              }}
-                              className="h-8 px-2 lg:px-3"
-                            >
-                              <Edit className="w-3 h-3 lg:mr-1" />
-                              <span className="hidden lg:inline">แก้ไข</span>
-                            </Button>
-                            <Button 
-                              variant={driver.isBanned ? "default" : "destructive"} 
-                              size="sm"
-                              onClick={() => handleBanToggle(driver.id)}
-                              className="h-8 px-2 lg:px-3"
-                            >
-                              {driver.isBanned ? (
-                                <>
-                                  <UserCheck className="w-3 h-3 lg:mr-1" />
-                                  <span className="hidden lg:inline">ปลดแบน</span>
-                                </>
-                              ) : (
-                                <>
-                                  <UserX className="w-3 h-3 lg:mr-1" />
-                                  <span className="hidden lg:inline">แบน</span>
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
+                          </TableCell>
+                          <TableCell>{driver.device_id || "-"}</TableCell>
+                          <TableCell>
+                            <Badge className={driver.is_online ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                              {driver.is_online ? "ออนไลน์" : "ออฟไลน์"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <span className={driver.critical_alerts_today > 0 ? 'text-red-600 font-medium' : 'text-slate-900'}>
+                                {driver.critical_alerts_today}
+                              </span>
+                              {driver.critical_alerts_today > 0 && <AlertTriangle className="w-4 h-4 text-red-500" />}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
                   </Table>
                 </div>
               </CardContent>

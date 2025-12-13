@@ -311,10 +311,17 @@ func GetAllDevices(c *gin.Context) {
 //   - ข้อมูล mock อ้างอิงจาก mock_drowsiness_events -> mock_drivers
 //
 // - total_devices: จำนวน device id ทั้งหมดจาก devices (จริง) + mock_drowsiness_events (mock)
+// - alerts_today: การแจ้งเตือนระดับด่วนวันนี้
+//   - ผู้ใช้จริง: alerts.severity='critical' ของวันที่ปัจจุบันเท่านั้น
+//   - ผู้ใช้ mock: mock_drowsiness_events.drowsiness_level='high' ทุกวัน (ไม่สนวันที่)
+//
+// - critical_alerts_today: ใช้สูตรเดียวกับ alerts_today เพื่อความสอดคล้อง
 func AdminOverview(c *gin.Context) {
 	var totalDrivers int
 	var activeDrivers int
 	var totalDevices int
+	var alertsToday int
+	var criticalAlertsToday int
 
 	// Aggregate in a single query for consistency
 	query := `
@@ -355,21 +362,178 @@ SELECT
 		COALESCE((SELECT COUNT(DISTINCT id) FROM devices), 0)
 		+
 		COALESCE((SELECT COUNT(DISTINCT device_id) FROM mock_drowsiness_events), 0)
-	) AS total_devices;
+	) AS total_devices,
+	(
+		COALESCE((SELECT COUNT(*) FROM alerts WHERE timestamp::date = CURRENT_DATE AND severity = 'critical'), 0)
+		+
+		COALESCE((SELECT COUNT(*) FROM mock_drowsiness_events WHERE drowsiness_level = 'high'), 0)
+	) AS alerts_today,
+	(
+		COALESCE((SELECT COUNT(*) FROM alerts WHERE timestamp::date = CURRENT_DATE AND severity = 'critical'), 0)
+		+
+		COALESCE((SELECT COUNT(*) FROM mock_drowsiness_events WHERE drowsiness_level = 'high'), 0)
+	) AS critical_alerts_today;
 `
 
-	if err := database.DB.QueryRow(query).Scan(&totalDrivers, &activeDrivers, &totalDevices); err != nil {
+	if err := database.DB.QueryRow(query).Scan(&totalDrivers, &activeDrivers, &totalDevices, &alertsToday, &criticalAlertsToday); err != nil {
 		log.Printf("❌ Error fetching admin overview stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch overview stats"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_drivers":  totalDrivers,
-		"active_drivers": activeDrivers,
-		"total_devices":  totalDevices,
-		"generated_at":   time.Now().Format(time.RFC3339),
+		"total_drivers":         totalDrivers,
+		"active_drivers":        activeDrivers,
+		"total_devices":         totalDevices,
+		"alerts_today":          alertsToday,
+		"critical_alerts_today": criticalAlertsToday,
+		"generated_at":          time.Now().Format(time.RFC3339),
 	})
+}
+
+// AdminDrivers returns a combined list of real and mock drivers with online status
+// and count of today's critical alerts, for use in the master dashboard driver table.
+func AdminDrivers(c *gin.Context) {
+	const realDriversQuery = `
+SELECT
+	u.id,
+	COALESCE(NULLIF(u.name, ''), u.email) AS name,
+	dev.device_id,
+	act.last_ts,
+	COALESCE(ac.critical_count, 0) AS critical_alerts_today
+FROM users u
+LEFT JOIN LATERAL (
+	SELECT d.id AS device_id
+	FROM devices d
+	WHERE d.user_id = u.id
+	ORDER BY d.created_at DESC
+	LIMIT 1
+) dev ON TRUE
+LEFT JOIN LATERAL (
+	SELECT MAX(dd.timestamp) AS last_ts
+	FROM drowsiness_data dd
+	WHERE dd.device_id = dev.device_id
+		AND dd.timestamp::date = CURRENT_DATE
+) act ON TRUE
+LEFT JOIN LATERAL (
+	SELECT COUNT(*) AS critical_count
+	FROM alerts a
+	WHERE a.device_id = dev.device_id
+		AND a.timestamp::date = CURRENT_DATE
+		AND a.severity = 'critical'
+) ac ON TRUE
+WHERE u.role = 'driver';`
+
+	const mockDriversQuery = `
+SELECT
+	md.driver_code,
+	md.full_name,
+	COALESCE(MAX(e.device_id), '') AS device_id,
+	MAX(e.timestamp) AS last_ts,
+	COALESCE(SUM(CASE WHEN e.drowsiness_level = 'high' THEN 1 ELSE 0 END), 0) AS critical_alerts_today
+FROM mock_drivers md
+LEFT JOIN mock_drowsiness_events e
+	ON e.driver_code = md.driver_code
+GROUP BY md.driver_code, md.full_name;`
+
+	now := time.Now()
+	cutoff := 5 * time.Minute
+
+	var results []models.AdminDriverSummary
+
+	// Real drivers
+	realRows, err := database.DB.Query(realDriversQuery)
+	if err != nil {
+		log.Printf("error querying real drivers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query real drivers"})
+		return
+	}
+	defer realRows.Close()
+
+	for realRows.Next() {
+		var (
+			userID         int
+			name           string
+			deviceID       sql.NullString
+			lastTS         sql.NullTime
+			criticalAlerts int
+		)
+		if err := realRows.Scan(&userID, &name, &deviceID, &lastTS, &criticalAlerts); err != nil {
+			log.Printf("error scanning real driver row: %v", err)
+			continue
+		}
+
+		devID := ""
+		if deviceID.Valid {
+			devID = deviceID.String
+		}
+
+		isOnline := false
+		if lastTS.Valid {
+			diff := now.Sub(lastTS.Time)
+			if diff >= 0 && diff <= cutoff {
+				isOnline = true
+			}
+		}
+
+		results = append(results, models.AdminDriverSummary{
+			ID:                  "real_" + strconv.Itoa(userID),
+			Name:                name,
+			DeviceID:            devID,
+			IsOnline:            isOnline,
+			CriticalAlertsToday: criticalAlerts,
+			Source:              "real",
+		})
+	}
+
+	// Mock drivers
+	mockRows, err := database.DB.Query(mockDriversQuery)
+	if err != nil {
+		log.Printf("error querying mock drivers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query mock drivers"})
+		return
+	}
+	defer mockRows.Close()
+
+	for mockRows.Next() {
+		var (
+			driverCode     string
+			fullName       string
+			deviceID       string
+			lastTS         sql.NullTime
+			criticalAlerts int
+		)
+		if err := mockRows.Scan(&driverCode, &fullName, &deviceID, &lastTS, &criticalAlerts); err != nil {
+			log.Printf("error scanning mock driver row: %v", err)
+			continue
+		}
+
+		isOnline := false
+		if lastTS.Valid {
+			diff := now.Sub(lastTS.Time)
+			if diff >= 0 && diff <= cutoff {
+				isOnline = true
+			}
+		}
+
+		results = append(results, models.AdminDriverSummary{
+			ID:                  "mock_" + driverCode,
+			Name:                fullName,
+			DeviceID:            deviceID,
+			IsOnline:            isOnline,
+			CriticalAlertsToday: criticalAlerts,
+			Source:              "mock",
+		})
+	}
+
+	if err := realRows.Err(); err != nil {
+		log.Printf("error after iterating real driver rows: %v", err)
+	}
+	if err := mockRows.Err(); err != nil {
+		log.Printf("error after iterating mock driver rows: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"drivers": results})
 }
 
 // ================== AUTH HANDLERS & MIDDLEWARE ==================
