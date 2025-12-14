@@ -61,6 +61,32 @@ type AdminDriverSummary struct {
 	Source              string `json:"source"` // "real" or "mock"
 }
 
+// AdminRecentAlert represents a unified recent alert/event item
+// used in the master dashboard "recent alerts" card.
+type AdminRecentAlert struct {
+	Time      string `json:"time"`
+	Driver    string `json:"driver"`
+	Type      string `json:"type"`
+	Severity  string `json:"severity"`
+	VehicleID string `json:"vehicleId"`
+	Source    string `json:"source"` // "real" or "mock"
+}
+
+// AdminAlertSlot represents alert count per time slot for analytics card
+type AdminAlertSlot struct {
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+// AdminAlertLevelSummary aggregates alert counts and percentages by level
+type AdminAlertLevelSummary struct {
+	HighCount   int     `json:"high_count"`
+	MediumCount int     `json:"medium_count"`
+	HighPct     float64 `json:"high_pct"`
+	MediumPct   float64 `json:"medium_pct"`
+	SafePct     float64 `json:"safe_pct"`
+}
+
 // User represents an application user (for authentication)
 type User struct {
 	ID           int       `json:"id" db:"id"`

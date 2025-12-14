@@ -118,6 +118,9 @@ func setupRouter() *gin.Engine {
 		{
 			admin.GET("/overview", handlers.AdminOverview)
 			admin.GET("/drivers", handlers.AdminDrivers)
+			admin.GET("/recent-alerts", handlers.AdminRecentAlerts)
+			admin.GET("/alert-slots", handlers.AdminAlertSlots)
+			admin.GET("/alert-levels", handlers.AdminAlertLevels)
 		}
 	}
 

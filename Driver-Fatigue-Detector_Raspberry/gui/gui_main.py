@@ -40,6 +40,7 @@ yawn_value_label = None
 from imutils.video import VideoStream
 import time
 import cv2
+import core.backend_api as backend_api
 
 __all__ = ["FatigueDetectionGUI", "start_gui"]
 
@@ -67,7 +68,7 @@ class FatigueDetectionGUI:
 
 def _update_device_info(container: tk.Frame, text_color: str, card_bg: str,
                         primary_color: str, success_color: str, danger_color: str) -> None:
-    """Populate static device info/status without Firebase dependency."""
+    """Populate device info and live backend connection status."""
     try:
         Label(container, text="Device: device_01", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
         Label(container, text="Backend: http://localhost:8080", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
@@ -76,8 +77,26 @@ def _update_device_info(container: tk.Frame, text_color: str, card_bg: str,
         # Simple status badges
         status_row = Frame(container, bg=card_bg)
         status_row.pack(fill="x", pady=(4,0))
-        Label(status_row, text="ONLINE", font=("Segoe UI", 8, "bold"), fg=success_color, bg=card_bg).pack(side="left")
+        status_label = Label(status_row, text="CHECKING...", font=("Segoe UI", 8, "bold"), fg=warning_color, bg=card_bg)
+        status_label.pack(side="left")
         Label(status_row, text="SECURE", font=("Segoe UI", 8, "bold"), fg=primary_color, bg=card_bg).pack(side="left", padx=8)
+
+        def _refresh_backend_status():
+            try:
+                # Health check; updates backend_api.backend_connected internally
+                backend_api.initialize_backend()
+                if backend_api.backend_connected:
+                    status_label.config(text="ONLINE", fg=success_color)
+                else:
+                    status_label.config(text="OFFLINE", fg=danger_color)
+            except Exception as e:
+                print(f"[GUI] Backend status check error: {e}")
+                status_label.config(text="OFFLINE", fg=danger_color)
+            finally:
+                # Re-check every 10 seconds
+                container.after(10000, _refresh_backend_status)
+
+        _refresh_backend_status()
     except Exception as e:
         print(f"[GUI] Device info init error: {e}")
 

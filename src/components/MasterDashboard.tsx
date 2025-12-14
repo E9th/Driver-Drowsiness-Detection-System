@@ -1,33 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
+// import { Progress } from "./ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Separator } from "./ui/separator";
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+// import { Separator } from "./ui/separator";
 import { 
   ArrowLeft, 
   Users, 
   AlertTriangle, 
-  TrendingUp, 
-  TrendingDown,
-  Settings,
+  // TrendingUp, 
+  // TrendingDown,
+  // Settings,
   Bell,
   Shield,
   Activity,
   Car,
-  MapPin,
+  // MapPin,
   Clock,
   BarChart3,
-  Eye,
-  Download,
-  Save,
-  FileText,
-  Calendar,
-  Hash
+  // Eye,
+  // Download,
+  // Save,
+  // FileText,
+  // Calendar,
+  // Hash
 } from "lucide-react";
 import { getToken } from "../utils/auth";
 
@@ -36,7 +36,6 @@ interface MasterDashboardProps {
 }
 
 export function MasterDashboard({ onBack }: MasterDashboardProps) {
-  const [selectedTimeRange, setSelectedTimeRange] = useState("today");
 
   const [driverOverview, setDriverOverview] = useState<{
     totalDrivers: number;
@@ -52,19 +51,40 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     criticalAlertsToday: 0,
   });
 
-  // Mock data สำหรับส่วนอื่น ๆ ของ dashboard (ยังใช้ค่าคงที่ต่อไป)
-  const overallStats = {
-    totalDrivers: 48,
-    activeDrivers: 36,
-    alertsToday: 15,
-    criticalAlerts: 3,
-    totalFleet: 52,
-    bannedDrivers: 2 // ผู้ขับขี่ที่ถูกแบน
-  };
+  // const overallStats = {
+  //   totalDrivers: 48,
+  //   activeDrivers: 36,
+  //   alertsToday: 15,
+  //   criticalAlerts: 3,
+  //   totalFleet: 52,
+  //   bannedDrivers: 2
+  // };
+
+  const [alertSlots, setAlertSlots] = useState<Array<{ label: string; count: number }>>([]);
+  const [peakSlot, setPeakSlot] = useState<string>("");
+  const [peakCount, setPeakCount] = useState<number>(0);
+  const riskSlots = useMemo(() => {
+    const baseLabels = [
+      "06-08",
+      "08-10",
+      "10-12",
+      "12-14",
+      "14-16",
+      "16-18",
+      "18-20",
+      "20-22",
+      "22-24",
+    ];
+    const countMap = new Map(alertSlots.map((s) => [s.label, s.count] as [string, number]));
+    return baseLabels.map((label) => ({
+      label,
+      count: countMap.get(label) ?? 0,
+    }));
+  }, [alertSlots]);
 
   // ดึงข้อมูลผู้ขับขี่ทั้งหมด + จำนวนที่กำลังขับขี่จาก backend (PostgreSQL)
   useEffect(() => {
-    const API_BASE = import.meta?.env?.VITE_API_BASE || "http://localhost:8080/api";
+    const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:8080/api";
 
     async function fetchOverview() {
       try {
@@ -107,13 +127,99 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       }
     }
 
+    async function fetchRecentAlerts() {
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/admin/recent-alerts?limit=20`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.alerts)) {
+          setRecentAlerts(
+            data.alerts.map((a: any) => ({
+              time: typeof a.time === "string" ? a.time : "-",
+              driver: typeof a.driver === "string" ? a.driver : "ไม่ทราบชื่อ",
+              type: typeof a.type === "string" ? a.type : "สถานะไม่ทราบ",
+              severity: typeof a.severity === "string" ? a.severity : "info",
+              vehicleId: typeof a.vehicleId === "string" ? a.vehicleId : "-",
+              source: typeof a.source === "string" ? a.source : "real",
+            }))
+          );
+        }
+      } catch {
+        // fallback: keep current list
+      }
+    }
+    async function fetchAlertSlots() {
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/admin/alert-slots`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.slots)) {
+          setAlertSlots(
+            data.slots.map((s: any) => ({
+              label: String(s.label ?? ""),
+              count: typeof s.count === "number" ? s.count : 0,
+            }))
+          );
+        }
+        if (typeof data.peak_slot === "string") setPeakSlot(data.peak_slot);
+        if (typeof data.peak_count === "number") setPeakCount(data.peak_count);
+      } catch {
+        // keep current slots
+      }
+    }
+
+    async function fetchAlertLevels() {
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/admin/alert-levels`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setAlertLevels({
+          highPct: typeof data.high_pct === "number" ? data.high_pct : 0,
+          mediumPct: typeof data.medium_pct === "number" ? data.medium_pct : 0,
+          safePct: typeof data.safe_pct === "number" ? data.safe_pct : 100,
+          highCount: typeof data.high_count === "number" ? data.high_count : 0,
+          mediumCount:
+            typeof data.medium_count === "number" ? data.medium_count : 0,
+        });
+      } catch {
+        // keep current alertLevels
+      }
+    }
+
     fetchOverview();
     fetchDrivers();
+    fetchRecentAlerts();
+    fetchAlertSlots();
+    fetchAlertLevels();
     const overviewId = setInterval(fetchOverview, 600000); // รีเฟรช overview ทุก 10 นาที
     const driversId = setInterval(fetchDrivers, 30000); // รีเฟรชรายการผู้ขับขี่ทุก 30 วินาที
+    const alertsId = setInterval(fetchRecentAlerts, 30000); // รีเฟรชการแจ้งเตือนล่าสุดทุก 30 วินาที
+    const slotsId = setInterval(fetchAlertSlots, 300000); // รีเฟรชข้อมูล slot ทุก 5 นาที
+    const levelsId = setInterval(fetchAlertLevels, 300000); // รีเฟรชข้อมูลสัดส่วนระดับทุก 5 นาที
     return () => {
       clearInterval(overviewId);
       clearInterval(driversId);
+      clearInterval(alertsId);
+      clearInterval(slotsId);
+      clearInterval(levelsId);
     };
   }, []);
 
@@ -127,15 +233,38 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
   };
 
   const [driverList, setDriverList] = useState<AdminDriverRow[]>([]);
+  const [driverSearch, setDriverSearch] = useState("");
+  const [driverPageSize, setDriverPageSize] = useState<number>(10);
 
-  // ลบประเภท "การยืดตัว" ออกตามที่ระบุ
-  const recentAlerts = [
-    { time: "15:45", driver: "สุพล แข็งแรง", type: "ความเหนื่อยล้าสูง", severity: "critical", vehicleId: "JKL-3456" },
-    { time: "14:30", driver: "วิชัย มั่นคง", type: "เหนื่อยล้าเล็กน้อย", severity: "warning", vehicleId: "GHI-9012" },
-    { time: "13:15", driver: "สมหญิง รักดี", type: "เหนื่อยล้าเล็กน้อย", severity: "warning", vehicleId: "DEF-5678" },
-    { time: "11:20", driver: "มานะ อุตสาห์", type: "เหนื่อยล้าเล็กน้อย", severity: "warning", vehicleId: "MNO-7890" },
-    { time: "10:05", driver: "สมชาย ใจดี", type: "ปกติ", severity: "success", vehicleId: "ABC-1234" }
-  ];
+  const filteredDrivers = useMemo(() => {
+    const q = driverSearch.trim().toLowerCase();
+    const base = q
+      ? driverList.filter((d) => {
+          const name = (d.name || "").toLowerCase();
+          const dev = (d.device_id || "").toLowerCase();
+          return name.includes(q) || dev.includes(q);
+        })
+      : driverList;
+    return base.slice(0, driverPageSize);
+  }, [driverList, driverSearch, driverPageSize]);
+
+  type RecentAlert = {
+    time: string;
+    driver: string;
+    type: string;
+    severity: string;
+    vehicleId: string;
+    source: string;
+  };
+
+  const [recentAlerts, setRecentAlerts] = useState<RecentAlert[]>([]);
+  const [alertLevels, setAlertLevels] = useState<{
+    highPct: number;
+    mediumPct: number;
+    safePct: number;
+    highCount: number;
+    mediumCount: number;
+  } | null>(null);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -236,13 +365,46 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
           <TabsContent value="drivers" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>รายชื่อผู้ขับขี่</span>
-                  <Badge variant="outline">{driverList.length} คน</Badge>
-                </CardTitle>
-                <CardDescription>
-                  สถานะและประสิทธิภาพผู้ขับขี่ในเวลาจริง
-                </CardDescription>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <span>รายชื่อผู้ขับขี่</span>
+                      <Badge variant="outline">{driverList.length} คน</Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      สถานะและประสิทธิภาพผู้ขับขี่ในเวลาจริง
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span>แสดง</span>
+                      {[5, 10, 15, 50, 100].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setDriverPageSize(n)}
+                          className={`h-7 px-2 rounded border text-xs transition ${
+                            driverPageSize === n
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                      <span>รายการ</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={driverSearch}
+                        onChange={(e) => setDriverSearch(e.target.value)}
+                        placeholder="ค้นหาชื่อหรือรหัสรถ..."
+                        className="h-9 w-full sm:w-56 rounded-md border border-slate-300 bg-white px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
+                      />
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -256,7 +418,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {driverList.map((driver) => (
+                      {filteredDrivers.map((driver) => (
                         <TableRow key={driver.id}>
                           <TableCell>
                             <div className="flex items-center space-x-2">
@@ -344,48 +506,54 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="h-64 bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg p-4 flex items-center justify-center border border-slate-200">
-                    <div className="text-center space-y-3">
-                      <Clock className="w-12 h-12 text-blue-500 mx-auto" />
-                      <div>
-                        <p className="font-medium text-slate-700">ช่วงเวลาที่มีการแจ้งเตือนมากที่สุด</p>
-                        <p className="text-sm text-slate-500">14:00-16:00 น. (5 ครั้ง)</p>
+                    <div className="w-full h-full flex flex-col">
+                      <div className="text-center space-y-1 mb-3">
+                        <Clock className="w-10 h-10 text-blue-500 mx-auto" />
+                        <p className="font-medium text-slate-700">ช่วงเวลาที่มีการแจ้งเตือนระดับสูงมากที่สุด</p>
+                        {peakSlot && peakCount > 0 ? (
+                          <p className="text-sm text-slate-500">
+                            {peakSlot} น. ({peakCount} ครั้ง)
+                          </p>
+                        ) : (
+                          <p className="text-sm text-slate-500">ยังไม่มีข้อมูลการแจ้งเตือน</p>
+                        )}
                       </div>
-                      <div className="flex justify-center space-x-3 text-xs">
-                        <div className="text-center">
-                          <div className="w-2 h-4 bg-green-400 rounded-full mx-auto mb-1"></div>
-                          <div>06-08</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-6 bg-yellow-400 rounded-full mx-auto mb-1"></div>
-                          <div>08-10</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-8 bg-orange-400 rounded-full mx-auto mb-1"></div>
-                          <div>10-12</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-12 bg-orange-400 rounded-full mx-auto mb-1"></div>
-                          <div>12-14</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-16 bg-red-500 rounded-full mx-auto mb-1"></div>
-                          <div>14-16</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-10 bg-orange-400 rounded-full mx-auto mb-1"></div>
-                          <div>16-18</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-8 bg-yellow-400 rounded-full mx-auto mb-1"></div>
-                          <div>18-20</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-6 bg-yellow-400 rounded-full mx-auto mb-1"></div>
-                          <div>20-22</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="w-2 h-8 bg-orange-400 rounded-full mx-auto mb-1"></div>
-                          <div>22-24</div>
+                      <div className="flex-1 flex items-end justify-center text-xs">
+                        <div className="w-full overflow-x-auto">
+                          <div className="flex items-end justify-center gap-3 min-w-[360px]">
+                            {(() => {
+                              const slots = alertSlots.length
+                                ? alertSlots
+                                : [
+                                    { label: "06-08", count: 0 },
+                                    { label: "08-10", count: 0 },
+                                    { label: "10-12", count: 0 },
+                                    { label: "12-14", count: 0 },
+                                    { label: "14-16", count: 0 },
+                                    { label: "16-18", count: 0 },
+                                    { label: "18-20", count: 0 },
+                                    { label: "20-22", count: 0 },
+                                    { label: "22-24", count: 0 },
+                                  ];
+                              const max = Math.max(1, ...slots.map((s) => s.count));
+                              return slots.map((s) => {
+                                const h = s.count === 0 ? 4 : 8 + (s.count / max) * 56;
+                                const isPeak = peakSlot === s.label && peakCount > 0;
+                                return (
+                                  <div key={s.label} className="flex flex-col items-center min-w-[30px]">
+                                    <div
+                                      className={`w-2 rounded-full mb-1 ${
+                                        isPeak ? "bg-red-500" : "bg-orange-400"
+                                      }`}
+                                      style={{ height: `${h}px` }}
+                                    />
+                                    <div className="text-[10px] text-slate-600">{s.label}</div>
+                                    <div className="text-[10px] text-slate-500">{s.count}</div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -413,24 +581,35 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                         <div className="absolute inset-0 rounded-full border-8 border-red-400 border-l-transparent border-t-transparent transform rotate-270"></div>
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className="text-center">
-                            <div className="text-2xl font-bold text-slate-700">92%</div>
-                            <div className="text-xs text-slate-500">ปลอดภัย</div>
+                            <div className="text-2xl font-bold text-slate-700">
+                              {(() => {
+                                const high = alertLevels ? Math.round(alertLevels.highPct) : 0;
+                                return `${high}%`;
+                              })()}
+                            </div>
+                            <div className="text-xs text-slate-500">ด่วน</div>
                           </div>
                         </div>
                       </div>
                     </div>
                     <div className="ml-8 space-y-3">
                       <div className="flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                        <span className="text-sm">ปกติ (67%)</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-orange-400 rounded-full"></div>
-                        <span className="text-sm">เตือน (25%)</span>
+                        <span className="text-sm">
+                          {(() => {
+                            const pct = alertLevels ? Math.round(alertLevels.mediumPct) : 0;
+                            return `เตือน (${pct}%)`;
+                          })()}
+                        </span>
                       </div>
                       <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-red-400 rounded-full"></div>
-                        <span className="text-sm">ด่วน (8%)</span>
+                        <span className="text-sm">
+                          {(() => {
+                            const pct = alertLevels ? Math.round(alertLevels.highPct) : 0;
+                            return `ด่วน (${pct}%)`;
+                          })()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -449,22 +628,20 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span>14:00-16:00</span>
-                      <span className="text-red-600 font-medium">5 ครั้ง</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>22:00-24:00</span>
-                      <span className="text-orange-600 font-medium">3 ครั้ง</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>10:00-12:00</span>
-                      <span className="text-yellow-600 font-medium">2 ครั้ง</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>06:00-08:00</span>
-                      <span className="text-green-600 font-medium">1 ครั้ง</span>
-                    </div>
+                    {riskSlots.map((slot) => {
+                      const colorClass =
+                        slot.count >= 6
+                          ? "text-red-600"
+                          : slot.count >= 3
+                          ? "text-orange-600"
+                          : "text-green-600";
+                      return (
+                        <div key={slot.label} className="flex justify-between text-sm">
+                          <span>{slot.label.replace("-", ":00-") + ":00"}</span>
+                          <span className={`${colorClass} font-medium`}>{slot.count} ครั้ง</span>
+                        </div>
+                      );
+                    })}
                   </div>
                   <div className="pt-2 border-t">
                     <p className="text-xs text-slate-500">

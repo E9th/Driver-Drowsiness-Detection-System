@@ -536,6 +536,248 @@ GROUP BY md.driver_code, md.full_name;`
 	c.JSON(http.StatusOK, gin.H{"drivers": results})
 }
 
+// AdminRecentAlerts returns a unified list of recent medium/high drowsiness events
+// from both real devices (drowsiness_data) and mock drivers (mock_drowsiness_events).
+// This is used by the master dashboard "recent alerts" card and includes both
+// medium (warning) and high (critical) severity events.
+func AdminRecentAlerts(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "20")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 20
+	}
+
+	query := `
+SELECT
+	dd.timestamp AS ts,
+	COALESCE(NULLIF(u.name, ''), u.email) AS driver_name,
+	CASE
+		WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'ความเหนื่อยล้าสูง'
+		WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'เหนื่อยล้าเล็กน้อย'
+		ELSE 'สถานะปกติ'
+	END AS alert_type,
+	CASE
+		WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'critical'
+		WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'warning'
+		ELSE 'info'
+	END AS severity,
+	d.id AS vehicle_id,
+	'real' AS source
+FROM drowsiness_data dd
+JOIN devices d ON dd.device_id = d.id
+JOIN users u ON d.user_id = u.id
+WHERE LOWER(dd.drowsiness_level) IN ('medium', 'high')
+	AND u.role = 'driver'
+ORDER BY ts DESC
+LIMIT $1;
+`
+
+	rows, err := database.DB.Query(query, limit)
+	if err != nil {
+		log.Printf("error querying recent alerts: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch recent alerts"})
+		return
+	}
+	defer rows.Close()
+
+	var results []models.AdminRecentAlert
+	for rows.Next() {
+		var (
+			ts       time.Time
+			driver   string
+			typeStr  string
+			severity string
+			vehicle  string
+			source   string
+		)
+		if err := rows.Scan(&ts, &driver, &typeStr, &severity, &vehicle, &source); err != nil {
+			log.Printf("error scanning recent alert row: %v", err)
+			continue
+		}
+
+		results = append(results, models.AdminRecentAlert{
+			Time:      ts.UTC().Format("15:04"),
+			Driver:    driver,
+			Type:      typeStr,
+			Severity:  severity,
+			VehicleID: vehicle,
+			Source:    source,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("error after iterating recent alert rows: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"alerts": results})
+}
+
+// AdminAlertSlots returns aggregated high-level alerts per time slot
+// combining real critical alerts (today only) and mock high events (all-time).
+// Slots are 2-hour windows from 06:00-24:00 (06-08, 08-10, ..., 22-24).
+func AdminAlertSlots(c *gin.Context) {
+	// Predefine all slots to ensure zero-count slots are included
+	slotLabels := []string{"06-08", "08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22", "22-24"}
+
+	query := `
+WITH real_counts AS (
+	SELECT
+		CASE
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 6 AND EXTRACT(HOUR FROM a.timestamp) < 8 THEN '06-08'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 8 AND EXTRACT(HOUR FROM a.timestamp) < 10 THEN '08-10'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 10 AND EXTRACT(HOUR FROM a.timestamp) < 12 THEN '10-12'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 12 AND EXTRACT(HOUR FROM a.timestamp) < 14 THEN '12-14'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 14 AND EXTRACT(HOUR FROM a.timestamp) < 16 THEN '14-16'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 16 AND EXTRACT(HOUR FROM a.timestamp) < 18 THEN '16-18'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 18 AND EXTRACT(HOUR FROM a.timestamp) < 20 THEN '18-20'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 20 AND EXTRACT(HOUR FROM a.timestamp) < 22 THEN '20-22'
+			WHEN EXTRACT(HOUR FROM a.timestamp) >= 22 AND EXTRACT(HOUR FROM a.timestamp) < 24 THEN '22-24'
+			ELSE NULL
+		END AS slot,
+		COUNT(*) AS cnt
+	FROM alerts a
+	WHERE a.severity = 'critical'
+		AND a.timestamp::date = CURRENT_DATE
+	GROUP BY slot
+),
+mock_counts AS (
+	SELECT
+		CASE
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 6 AND EXTRACT(HOUR FROM e.timestamp) < 8 THEN '06-08'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 8 AND EXTRACT(HOUR FROM e.timestamp) < 10 THEN '08-10'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 10 AND EXTRACT(HOUR FROM e.timestamp) < 12 THEN '10-12'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 12 AND EXTRACT(HOUR FROM e.timestamp) < 14 THEN '12-14'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 14 AND EXTRACT(HOUR FROM e.timestamp) < 16 THEN '14-16'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 16 AND EXTRACT(HOUR FROM e.timestamp) < 18 THEN '16-18'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 18 AND EXTRACT(HOUR FROM e.timestamp) < 20 THEN '18-20'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 20 AND EXTRACT(HOUR FROM e.timestamp) < 22 THEN '20-22'
+			WHEN EXTRACT(HOUR FROM e.timestamp) >= 22 AND EXTRACT(HOUR FROM e.timestamp) < 24 THEN '22-24'
+			ELSE NULL
+		END AS slot,
+		COUNT(*) AS cnt
+	FROM mock_drowsiness_events e
+		WHERE LOWER(e.drowsiness_level) = 'high'
+	GROUP BY slot
+),
+combined AS (
+	SELECT slot, SUM(cnt) AS total_cnt
+	FROM (
+		SELECT slot, cnt FROM real_counts
+		UNION ALL
+		SELECT slot, cnt FROM mock_counts
+	) x
+	WHERE slot IS NOT NULL
+	GROUP BY slot
+)
+SELECT slot, COALESCE(total_cnt, 0) AS count
+FROM combined;
+`
+
+	rows, err := database.DB.Query(query)
+	if err != nil {
+		log.Printf("error querying alert slots: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch alert slots"})
+		return
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var (
+			slotLabel string
+			count     int
+		)
+		if err := rows.Scan(&slotLabel, &count); err != nil {
+			log.Printf("error scanning alert slot row: %v", err)
+			continue
+		}
+		counts[slotLabel] = count
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("error after iterating alert slot rows: %v", err)
+	}
+
+	var (
+		slots     []models.AdminAlertSlot
+		totalHigh int
+		peakLbl   string
+		peakCnt   int
+	)
+
+	for _, label := range slotLabels {
+		cnt := counts[label]
+		slots = append(slots, models.AdminAlertSlot{Label: label, Count: cnt})
+		totalHigh += cnt
+		if cnt > peakCnt {
+			peakCnt = cnt
+			peakLbl = label
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"slots":      slots,
+		"total_high": totalHigh,
+		"peak_slot":  peakLbl,
+		"peak_count": peakCnt,
+	})
+}
+
+// AdminAlertLevels returns aggregated counts and percentages of medium/high alerts
+// combining real alerts (today) and mock drowsiness events (all-time) for use in
+// the donut card.
+func AdminAlertLevels(c *gin.Context) {
+	query := `
+WITH real AS (
+	SELECT
+		COUNT(*) FILTER (WHERE severity = 'critical') AS high_real,
+		COUNT(*) FILTER (WHERE severity = 'warning') AS medium_real
+	FROM alerts
+	WHERE timestamp::date = CURRENT_DATE
+),
+mock AS (
+	SELECT
+		COUNT(*) FILTER (WHERE LOWER(drowsiness_level) = 'high') AS high_mock,
+		COUNT(*) FILTER (WHERE LOWER(drowsiness_level) = 'medium') AS medium_mock
+	FROM mock_drowsiness_events
+)
+SELECT
+	COALESCE(real.high_real, 0) + COALESCE(mock.high_mock, 0) AS high_total,
+	COALESCE(real.medium_real, 0) + COALESCE(mock.medium_mock, 0) AS medium_total
+FROM real, mock;
+`
+
+	var highCount, mediumCount int
+	if err := database.DB.QueryRow(query).Scan(&highCount, &mediumCount); err != nil {
+		log.Printf("error querying alert levels: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch alert levels"})
+		return
+	}
+
+	total := highCount + mediumCount
+	var highPct, mediumPct, safePct float64
+	if total > 0 {
+		highPct = float64(highCount) * 100.0 / float64(total)
+		mediumPct = float64(mediumCount) * 100.0 / float64(total)
+		safePct = 100.0 - highPct - mediumPct
+		if safePct < 0 {
+			safePct = 0
+		}
+	} else {
+		safePct = 100.0
+	}
+
+	resp := models.AdminAlertLevelSummary{
+		HighCount:   highCount,
+		MediumCount: mediumCount,
+		HighPct:     highPct,
+		MediumPct:   mediumPct,
+		SafePct:     safePct,
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // ================== AUTH HANDLERS & MIDDLEWARE ==================
 
 // Register creates a new user account

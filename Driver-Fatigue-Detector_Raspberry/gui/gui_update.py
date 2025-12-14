@@ -42,6 +42,7 @@ alert_triggered = False
 mouth_open = False
 last_backend_send_time = 0
 current_detection_data = {}
+last_yawn_event_time = 0.0
 
 #-- Mediapipe Face Mesh setup
 mp_face_mesh = mp.solutions.face_mesh
@@ -109,11 +110,15 @@ def _send_periodic_backend(status_message: str, data: dict) -> None:
 
     # Periodic send otherwise
     if now - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
+        # Treat YAWN DETECTED as medium level when sending to backend
+        if status_message == "YAWN DETECTED":
+            minimal["drowsiness_level"] = "medium"
         send_data(minimal)
         if status_message == "DROWSINESS DETECTED":
             send_alert("drowsiness_detected", "medium")
         elif status_message == "YAWN DETECTED":
-            send_alert("yawn_detected", "low")
+            # Upgrade yawn alerts to medium severity
+            send_alert("yawn_detected", "medium")
         last_backend_send_time = now
 
 #-- Function to update the video frame and perform detection
@@ -183,12 +188,15 @@ def update_frame() -> None:
                 if yawn_start_time is None:
                     yawn_start_time = time.time()
                 elif time.time() - yawn_start_time > 1.5:
-                    if not mouth_open:
+                    now_t = time.time()
+                    # Cooldown 3 seconds between yawn events to avoid rapid repeats
+                    if not mouth_open and (now_t - last_yawn_event_time) >= 3.0:
                         yawn_count += 1
                         mouth_open = True
-                    if status_message == "NORMAL":
-                        status_message = "YAWN DETECTED"
-                        status_color = "#FF9800"
+                        last_yawn_event_time = now_t
+                        if status_message == "NORMAL":
+                            status_message = "YAWN DETECTED"
+                            status_color = "#FF9800"
             else:
                 mouth_open = False
                 yawn_start_time = None
