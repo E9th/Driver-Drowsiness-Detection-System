@@ -306,17 +306,22 @@ func GetAllDevices(c *gin.Context) {
 
 // AdminOverview returns aggregated statistics for master dashboard
 // - total_drivers: จำนวนผู้ขับขี่ทั้งหมดจาก users (role='driver') + mock_drivers
-// - active_drivers: จำนวนผู้ขับขี่ที่มีการอัปเดตล่าสุดภายใน 5 นาที (เฉพาะข้อมูลของวันที่ปัจจุบัน)
-//   - ข้อมูลจริงอ้างอิงจาก drowsiness_data ผ่าน devices -> users
-//   - ข้อมูล mock อ้างอิงจาก mock_drowsiness_events -> mock_drivers
+// - active_drivers: จำนวนผู้ขับขี่ที่มีการอัปเดตล่าสุดภายใน 1 นาที (เฉพาะข้อมูลของวันที่ปัจจุบัน)
+//   - ข้อมูลจริงอ้างอิงจาก drowsiness_data ผ่าน devices -> users (ภายใน 1 นาที)
+//   - หรือ devices.last_update ภายใน 10 วินาที (มองเป็น heartbeat)
+//   - ข้อมูล mock อ้างอิงจาก mock_drowsiness_events -> mock_drivers (ภายใน 1 นาที)
 //
 // - total_devices: จำนวน device id ทั้งหมดจาก devices (จริง) + mock_drowsiness_events (mock)
 // - alerts_today: การแจ้งเตือนระดับด่วนวันนี้
-//   - ผู้ใช้จริง: alerts.severity='critical' ของวันที่ปัจจุบันเท่านั้น
-//   - ผู้ใช้ mock: mock_drowsiness_events.drowsiness_level='high' ทุกวัน (ไม่สนวันที่)
+//   - ผู้ใช้จริง: นับจาก drowsiness_data.drowsiness_level='high' ของวันที่ปัจจุบัน (device ที่ผูกกับ users.role='driver')
+//   - ผู้ใช้ mock: mock_drowsiness_events.drowsiness_level='high' (ปัจจุบันยังใช้ทุกวันรวมกัน)
 //
 // - critical_alerts_today: ใช้สูตรเดียวกับ alerts_today เพื่อความสอดคล้อง
 func AdminOverview(c *gin.Context) {
+	// Prevent caching so dashboard always sees latest summary
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	var totalDrivers int
 	var activeDrivers int
 	var totalDevices int
@@ -342,20 +347,10 @@ SELECT
 				LIMIT 1
 			) last ON TRUE
 			WHERE u.role = 'driver'
-				AND last.timestamp >= NOW() - INTERVAL '5 minutes'
-		), 0)
-		+
-		COALESCE((
-			SELECT COUNT(*) FROM (
-				SELECT md.driver_code, MAX(e.timestamp) AS last_ts
-				FROM mock_drivers md
-				LEFT JOIN mock_drowsiness_events e
-					ON e.driver_code = md.driver_code
-				 AND e.timestamp::date = CURRENT_DATE
-				GROUP BY md.driver_code
-			) x
-			WHERE x.last_ts IS NOT NULL
-				AND x.last_ts >= NOW() - INTERVAL '5 minutes'
+				AND (
+					(last.timestamp IS NOT NULL AND last.timestamp >= NOW() - INTERVAL '1 minute')
+					OR d.last_update >= NOW() - INTERVAL '10 seconds'
+				)
 		), 0)
 	) AS active_drivers,
 	(
@@ -364,14 +359,38 @@ SELECT
 		COALESCE((SELECT COUNT(DISTINCT device_id) FROM mock_drowsiness_events), 0)
 	) AS total_devices,
 	(
-		COALESCE((SELECT COUNT(*) FROM alerts WHERE timestamp::date = CURRENT_DATE AND severity = 'critical'), 0)
+		COALESCE((
+			SELECT COUNT(*)
+			FROM drowsiness_data dd
+			JOIN devices d ON dd.device_id = d.id
+			JOIN users u ON d.user_id = u.id
+			WHERE u.role = 'driver'
+				AND dd.timestamp::date = CURRENT_DATE
+				AND LOWER(dd.drowsiness_level) = 'high'
+		), 0)
 		+
-		COALESCE((SELECT COUNT(*) FROM mock_drowsiness_events WHERE drowsiness_level = 'high'), 0)
+		COALESCE((
+			SELECT COUNT(*)
+			FROM mock_drowsiness_events
+			WHERE LOWER(drowsiness_level) = 'high'
+		), 0)
 	) AS alerts_today,
 	(
-		COALESCE((SELECT COUNT(*) FROM alerts WHERE timestamp::date = CURRENT_DATE AND severity = 'critical'), 0)
+		COALESCE((
+			SELECT COUNT(*)
+			FROM drowsiness_data dd
+			JOIN devices d ON dd.device_id = d.id
+			JOIN users u ON d.user_id = u.id
+			WHERE u.role = 'driver'
+				AND dd.timestamp::date = CURRENT_DATE
+				AND LOWER(dd.drowsiness_level) = 'high'
+		), 0)
 		+
-		COALESCE((SELECT COUNT(*) FROM mock_drowsiness_events WHERE drowsiness_level = 'high'), 0)
+		COALESCE((
+			SELECT COUNT(*)
+			FROM mock_drowsiness_events
+			WHERE LOWER(drowsiness_level) = 'high'
+		), 0)
 	) AS critical_alerts_today;
 `
 
@@ -393,17 +412,34 @@ SELECT
 
 // AdminDrivers returns a combined list of real and mock drivers with online status
 // and count of today's critical alerts, for use in the master dashboard driver table.
+// Online criteria:
+//   - สำหรับผู้ใช้จริง: มีข้อมูล drowsiness_data ภายใน 1 นาทีล่าสุดของวันนี้
+//     หรือ devices.last_update ภายใน 10 วินาทีล่าสุด (มองเป็น heartbeat)
+//   - สำหรับ mock: มี mock_drowsiness_events ภายใน 1 นาทีล่าสุดของวันนี้
 func AdminDrivers(c *gin.Context) {
+	// Prevent caching so driver list reflects real-time status
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	const realDriversQuery = `
 SELECT
 	u.id,
 	COALESCE(NULLIF(u.name, ''), u.email) AS name,
 	dev.device_id,
 	act.last_ts,
+	dev.last_update,
+	CASE
+		WHEN (
+			(act.last_ts IS NOT NULL AND act.last_ts >= NOW() - INTERVAL '1 minute')
+			OR (dev.last_update IS NOT NULL AND dev.last_update >= NOW() - INTERVAL '10 seconds')
+		) THEN TRUE
+		ELSE FALSE
+	END AS is_online,
 	COALESCE(ac.critical_count, 0) AS critical_alerts_today
 FROM users u
 LEFT JOIN LATERAL (
-	SELECT d.id AS device_id
+	SELECT d.id AS device_id,
+	       d.last_update
 	FROM devices d
 	WHERE d.user_id = u.id
 	ORDER BY d.created_at DESC
@@ -417,27 +453,39 @@ LEFT JOIN LATERAL (
 ) act ON TRUE
 LEFT JOIN LATERAL (
 	SELECT COUNT(*) AS critical_count
-	FROM alerts a
-	WHERE a.device_id = dev.device_id
-		AND a.timestamp::date = CURRENT_DATE
-		AND a.severity = 'critical'
+	FROM drowsiness_data dd
+	WHERE dd.device_id = dev.device_id
+		AND dd.timestamp::date = CURRENT_DATE
+		AND LOWER(dd.drowsiness_level) = 'high'
 ) ac ON TRUE
 WHERE u.role = 'driver';`
 
 	const mockDriversQuery = `
-SELECT
-	md.driver_code,
-	md.full_name,
-	COALESCE(MAX(e.device_id), '') AS device_id,
-	MAX(e.timestamp) AS last_ts,
-	COALESCE(SUM(CASE WHEN e.drowsiness_level = 'high' THEN 1 ELSE 0 END), 0) AS critical_alerts_today
-FROM mock_drivers md
-LEFT JOIN mock_drowsiness_events e
-	ON e.driver_code = md.driver_code
-GROUP BY md.driver_code, md.full_name;`
-
-	now := time.Now()
-	cutoff := 5 * time.Minute
+	SELECT
+		md.driver_code,
+		md.full_name,
+		COALESCE(devs.device_id, '') AS device_id,
+		recent.last_ts,
+		FALSE AS is_online,
+		COALESCE(highs.critical_count, 0) AS critical_alerts_today
+	FROM mock_drivers md
+	LEFT JOIN LATERAL (
+		SELECT MAX(e.timestamp) AS last_ts
+		FROM mock_drowsiness_events e
+		WHERE e.driver_code = md.driver_code
+		  AND e.timestamp::date = CURRENT_DATE
+	) recent ON TRUE
+	LEFT JOIN LATERAL (
+		SELECT COUNT(*) AS critical_count
+		FROM mock_drowsiness_events e
+		WHERE e.driver_code = md.driver_code
+		  AND LOWER(e.drowsiness_level) = 'high'
+	) highs ON TRUE
+	LEFT JOIN LATERAL (
+		SELECT MAX(e.device_id) AS device_id
+		FROM mock_drowsiness_events e
+		WHERE e.driver_code = md.driver_code
+	) devs ON TRUE;`
 
 	var results []models.AdminDriverSummary
 
@@ -456,9 +504,11 @@ GROUP BY md.driver_code, md.full_name;`
 			name           string
 			deviceID       sql.NullString
 			lastTS         sql.NullTime
+			lastUpdate     sql.NullTime
+			isOnlineSQL    bool
 			criticalAlerts int
 		)
-		if err := realRows.Scan(&userID, &name, &deviceID, &lastTS, &criticalAlerts); err != nil {
+		if err := realRows.Scan(&userID, &name, &deviceID, &lastTS, &lastUpdate, &isOnlineSQL, &criticalAlerts); err != nil {
 			log.Printf("error scanning real driver row: %v", err)
 			continue
 		}
@@ -468,19 +518,11 @@ GROUP BY md.driver_code, md.full_name;`
 			devID = deviceID.String
 		}
 
-		isOnline := false
-		if lastTS.Valid {
-			diff := now.Sub(lastTS.Time)
-			if diff >= 0 && diff <= cutoff {
-				isOnline = true
-			}
-		}
-
 		results = append(results, models.AdminDriverSummary{
 			ID:                  "real_" + strconv.Itoa(userID),
 			Name:                name,
 			DeviceID:            devID,
-			IsOnline:            isOnline,
+			IsOnline:            isOnlineSQL,
 			CriticalAlertsToday: criticalAlerts,
 			Source:              "real",
 		})
@@ -501,26 +543,19 @@ GROUP BY md.driver_code, md.full_name;`
 			fullName       string
 			deviceID       string
 			lastTS         sql.NullTime
+			isOnlineSQL    bool
 			criticalAlerts int
 		)
-		if err := mockRows.Scan(&driverCode, &fullName, &deviceID, &lastTS, &criticalAlerts); err != nil {
+		if err := mockRows.Scan(&driverCode, &fullName, &deviceID, &lastTS, &isOnlineSQL, &criticalAlerts); err != nil {
 			log.Printf("error scanning mock driver row: %v", err)
 			continue
-		}
-
-		isOnline := false
-		if lastTS.Valid {
-			diff := now.Sub(lastTS.Time)
-			if diff >= 0 && diff <= cutoff {
-				isOnline = true
-			}
 		}
 
 		results = append(results, models.AdminDriverSummary{
 			ID:                  "mock_" + driverCode,
 			Name:                fullName,
 			DeviceID:            deviceID,
-			IsOnline:            isOnline,
+			IsOnline:            false,
 			CriticalAlertsToday: criticalAlerts,
 			Source:              "mock",
 		})
@@ -541,6 +576,10 @@ GROUP BY md.driver_code, md.full_name;`
 // This is used by the master dashboard "recent alerts" card and includes both
 // medium (warning) and high (critical) severity events.
 func AdminRecentAlerts(c *gin.Context) {
+	// Prevent caching for recent alerts feed
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	limitStr := c.DefaultQuery("limit", "20")
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 {
@@ -616,58 +655,65 @@ LIMIT $1;
 // combining real critical alerts (today only) and mock high events (all-time).
 // Slots are 2-hour windows from 06:00-24:00 (06-08, 08-10, ..., 22-24).
 func AdminAlertSlots(c *gin.Context) {
+	// Prevent caching so time-slot analytics stay fresh
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	// Predefine all slots to ensure zero-count slots are included
 	slotLabels := []string{"06-08", "08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22", "22-24"}
 
 	query := `
 WITH real_counts AS (
-	SELECT
-		CASE
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 6 AND EXTRACT(HOUR FROM a.timestamp) < 8 THEN '06-08'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 8 AND EXTRACT(HOUR FROM a.timestamp) < 10 THEN '08-10'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 10 AND EXTRACT(HOUR FROM a.timestamp) < 12 THEN '10-12'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 12 AND EXTRACT(HOUR FROM a.timestamp) < 14 THEN '12-14'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 14 AND EXTRACT(HOUR FROM a.timestamp) < 16 THEN '14-16'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 16 AND EXTRACT(HOUR FROM a.timestamp) < 18 THEN '16-18'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 18 AND EXTRACT(HOUR FROM a.timestamp) < 20 THEN '18-20'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 20 AND EXTRACT(HOUR FROM a.timestamp) < 22 THEN '20-22'
-			WHEN EXTRACT(HOUR FROM a.timestamp) >= 22 AND EXTRACT(HOUR FROM a.timestamp) < 24 THEN '22-24'
-			ELSE NULL
-		END AS slot,
-		COUNT(*) AS cnt
-	FROM alerts a
-	WHERE a.severity = 'critical'
-		AND a.timestamp::date = CURRENT_DATE
-	GROUP BY slot
+    SELECT
+        CASE
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 6 AND EXTRACT(HOUR FROM dd.timestamp) < 8 THEN '06-08'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 8 AND EXTRACT(HOUR FROM dd.timestamp) < 10 THEN '08-10'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 10 AND EXTRACT(HOUR FROM dd.timestamp) < 12 THEN '10-12'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 12 AND EXTRACT(HOUR FROM dd.timestamp) < 14 THEN '12-14'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 14 AND EXTRACT(HOUR FROM dd.timestamp) < 16 THEN '14-16'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 16 AND EXTRACT(HOUR FROM dd.timestamp) < 18 THEN '16-18'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 18 AND EXTRACT(HOUR FROM dd.timestamp) < 20 THEN '18-20'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 20 AND EXTRACT(HOUR FROM dd.timestamp) < 22 THEN '20-22'
+            WHEN EXTRACT(HOUR FROM dd.timestamp) >= 22 AND EXTRACT(HOUR FROM dd.timestamp) < 24 THEN '22-24'
+            ELSE NULL
+        END AS slot,
+        COUNT(*) AS cnt
+    FROM drowsiness_data dd
+    JOIN devices d ON dd.device_id = d.id
+    JOIN users u ON d.user_id = u.id
+    WHERE u.role = 'driver'
+      AND dd.timestamp::date = CURRENT_DATE
+      AND LOWER(dd.drowsiness_level) = 'high'
+    GROUP BY slot
 ),
 mock_counts AS (
-	SELECT
-		CASE
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 6 AND EXTRACT(HOUR FROM e.timestamp) < 8 THEN '06-08'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 8 AND EXTRACT(HOUR FROM e.timestamp) < 10 THEN '08-10'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 10 AND EXTRACT(HOUR FROM e.timestamp) < 12 THEN '10-12'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 12 AND EXTRACT(HOUR FROM e.timestamp) < 14 THEN '12-14'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 14 AND EXTRACT(HOUR FROM e.timestamp) < 16 THEN '14-16'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 16 AND EXTRACT(HOUR FROM e.timestamp) < 18 THEN '16-18'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 18 AND EXTRACT(HOUR FROM e.timestamp) < 20 THEN '18-20'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 20 AND EXTRACT(HOUR FROM e.timestamp) < 22 THEN '20-22'
-			WHEN EXTRACT(HOUR FROM e.timestamp) >= 22 AND EXTRACT(HOUR FROM e.timestamp) < 24 THEN '22-24'
-			ELSE NULL
-		END AS slot,
-		COUNT(*) AS cnt
-	FROM mock_drowsiness_events e
-		WHERE LOWER(e.drowsiness_level) = 'high'
-	GROUP BY slot
+    SELECT
+        CASE
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 6 AND EXTRACT(HOUR FROM e.timestamp) < 8 THEN '06-08'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 8 AND EXTRACT(HOUR FROM e.timestamp) < 10 THEN '08-10'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 10 AND EXTRACT(HOUR FROM e.timestamp) < 12 THEN '10-12'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 12 AND EXTRACT(HOUR FROM e.timestamp) < 14 THEN '12-14'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 14 AND EXTRACT(HOUR FROM e.timestamp) < 16 THEN '14-16'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 16 AND EXTRACT(HOUR FROM e.timestamp) < 18 THEN '16-18'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 18 AND EXTRACT(HOUR FROM e.timestamp) < 20 THEN '18-20'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 20 AND EXTRACT(HOUR FROM e.timestamp) < 22 THEN '20-22'
+            WHEN EXTRACT(HOUR FROM e.timestamp) >= 22 AND EXTRACT(HOUR FROM e.timestamp) < 24 THEN '22-24'
+            ELSE NULL
+        END AS slot,
+        COUNT(*) AS cnt
+    FROM mock_drowsiness_events e
+      WHERE LOWER(e.drowsiness_level) = 'high'
+    GROUP BY slot
 ),
 combined AS (
-	SELECT slot, SUM(cnt) AS total_cnt
-	FROM (
-		SELECT slot, cnt FROM real_counts
-		UNION ALL
-		SELECT slot, cnt FROM mock_counts
-	) x
-	WHERE slot IS NOT NULL
-	GROUP BY slot
+    SELECT slot, SUM(cnt) AS total_cnt
+    FROM (
+        SELECT slot, cnt FROM real_counts
+        UNION ALL
+        SELECT slot, cnt FROM mock_counts
+    ) x
+    WHERE slot IS NOT NULL
+    GROUP BY slot
 )
 SELECT slot, COALESCE(total_cnt, 0) AS count
 FROM combined;
@@ -727,13 +773,20 @@ FROM combined;
 // combining real alerts (today) and mock drowsiness events (all-time) for use in
 // the donut card.
 func AdminAlertLevels(c *gin.Context) {
+	// Prevent caching for alert level distribution (donut card)
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	query := `
 WITH real AS (
 	SELECT
-		COUNT(*) FILTER (WHERE severity = 'critical') AS high_real,
-		COUNT(*) FILTER (WHERE severity = 'warning') AS medium_real
-	FROM alerts
-	WHERE timestamp::date = CURRENT_DATE
+		COUNT(*) FILTER (WHERE LOWER(dd.drowsiness_level) = 'high') AS high_real,
+		COUNT(*) FILTER (WHERE LOWER(dd.drowsiness_level) = 'medium') AS medium_real
+	FROM drowsiness_data dd
+	JOIN devices d ON dd.device_id = d.id
+	JOIN users u ON d.user_id = u.id
+	WHERE u.role = 'driver'
+	  AND dd.timestamp::date = CURRENT_DATE
 ),
 mock AS (
 	SELECT

@@ -32,6 +32,7 @@ EYE_AR_THRESH = 0.25
 EYE_AR_CONSEC_FRAMES = 20
 FIREBASE_SEND_INTERVAL = 30
 CRITICAL_DEBOUNCE_SECONDS = 10
+YAWN_DEBOUNCE_SECONDS = 3
 COUNTER = 0
 drowsy_active = False  # true while continuous drowsiness event
 eye_blink_count = 0
@@ -43,6 +44,7 @@ mouth_open = False
 last_backend_send_time = 0
 current_detection_data = {}
 last_yawn_event_time = 0.0
+last_yawn_send_time = 0.0
 
 #-- Mediapipe Face Mesh setup
 mp_face_mesh = mp.solutions.face_mesh
@@ -89,8 +91,8 @@ def draw_landmark_box(frame, landmarks, indices, color=(0, 255, 0)):
     cv2.polylines(frame, [points], isClosed=True, color=color, thickness=1)
 
 def _send_periodic_backend(status_message: str, data: dict) -> None:
-    """Send minimal data to backend at interval; send immediately on critical."""
-    global last_backend_send_time
+    """Send minimal data to backend at interval; send immediately on critical/yawn."""
+    global last_backend_send_time, last_yawn_send_time
     now = time.time()
 
     # Build minimal payload expected by backend (no ear/mouth_distance)
@@ -108,17 +110,20 @@ def _send_periodic_backend(status_message: str, data: dict) -> None:
             last_backend_send_time = now
         return
 
-    # Periodic send otherwise
-    if now - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
-        # Treat YAWN DETECTED as medium level when sending to backend
-        if status_message == "YAWN DETECTED":
+    # Immediate send for YAWN DETECTED with its own debounce
+    if status_message == "YAWN DETECTED":
+        if now - last_yawn_send_time >= YAWN_DEBOUNCE_SECONDS:
             minimal["drowsiness_level"] = "medium"
+            send_data(minimal)
+            send_alert("yawn_detected", "medium")
+            last_yawn_send_time = now
+        return
+
+    # Periodic send otherwise (NORMAL / DROWSINESS DETECTED / others)
+    if now - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
         send_data(minimal)
         if status_message == "DROWSINESS DETECTED":
             send_alert("drowsiness_detected", "medium")
-        elif status_message == "YAWN DETECTED":
-            # Upgrade yawn alerts to medium severity
-            send_alert("yawn_detected", "medium")
         last_backend_send_time = now
 
 #-- Function to update the video frame and perform detection
@@ -126,7 +131,7 @@ def update_frame() -> None:
     """Main per-frame update loop (scheduled with after)."""
     global COUNTER, eye_blink_count, yawn_count
     global drowsy_active, mouth_open, alert_triggered, closed_eye_time, progress_full_count
-    global last_backend_send_time, current_detection_data, yawn_start_time
+    global last_backend_send_time, current_detection_data, yawn_start_time, last_yawn_event_time
 
     if not detection_enabled or not camera_available:
         video_label.after(100, update_frame)
@@ -194,9 +199,10 @@ def update_frame() -> None:
                         yawn_count += 1
                         mouth_open = True
                         last_yawn_event_time = now_t
-                        if status_message == "NORMAL":
-                            status_message = "YAWN DETECTED"
-                            status_color = "#FF9800"
+                    # While mouth is considered open (yawn in progress), keep status as YAWN DETECTED
+                    if mouth_open and status_message == "NORMAL":
+                        status_message = "YAWN DETECTED"
+                        status_color = "#FF9800"
             else:
                 mouth_open = False
                 yawn_start_time = None

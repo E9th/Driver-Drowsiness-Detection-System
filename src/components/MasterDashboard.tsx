@@ -90,6 +90,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       try {
         const token = getToken();
         const res = await fetch(`${API_BASE}/admin/overview`, {
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -114,6 +115,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       try {
         const token = getToken();
         const res = await fetch(`${API_BASE}/admin/drivers`, {
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -131,6 +133,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       try {
         const token = getToken();
         const res = await fetch(`${API_BASE}/admin/recent-alerts?limit=20`, {
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -158,6 +161,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       try {
         const token = getToken();
         const res = await fetch(`${API_BASE}/admin/alert-slots`, {
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -184,6 +188,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       try {
         const token = getToken();
         const res = await fetch(`${API_BASE}/admin/alert-levels`, {
+          cache: "no-store",
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -209,11 +214,11 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     fetchRecentAlerts();
     fetchAlertSlots();
     fetchAlertLevels();
-    const overviewId = setInterval(fetchOverview, 600000); // รีเฟรช overview ทุก 10 นาที
-    const driversId = setInterval(fetchDrivers, 30000); // รีเฟรชรายการผู้ขับขี่ทุก 30 วินาที
-    const alertsId = setInterval(fetchRecentAlerts, 30000); // รีเฟรชการแจ้งเตือนล่าสุดทุก 30 วินาที
-    const slotsId = setInterval(fetchAlertSlots, 300000); // รีเฟรชข้อมูล slot ทุก 5 นาที
-    const levelsId = setInterval(fetchAlertLevels, 300000); // รีเฟรชข้อมูลสัดส่วนระดับทุก 5 นาที
+    const overviewId = setInterval(fetchOverview, 1000); // รีเฟรช overview ทุก 1 วินาที
+    const driversId = setInterval(fetchDrivers, 1000); // รีเฟรชรายการผู้ขับขี่ทุก 1 วินาที
+    const alertsId = setInterval(fetchRecentAlerts, 1000); // รีเฟรชการแจ้งเตือนล่าสุดทุก 1 วินาที
+    const slotsId = setInterval(fetchAlertSlots, 1000); // รีเฟรชข้อมูล slot ทุก 1 วินาที
+    const levelsId = setInterval(fetchAlertLevels, 1000); // รีเฟรชข้อมูลสัดส่วนระดับทุก 1 วินาที
     return () => {
       clearInterval(overviewId);
       clearInterval(driversId);

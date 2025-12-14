@@ -49,7 +49,9 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   const fetchStatusHistory = useCallback(async () => {
     try {
       const rawLimit = 300; // เพียงพอต่อวัน
-      const res = await fetch(`http://localhost:8080/api/devices/${deviceId}/history?limit=${rawLimit}`);
+      const res = await fetch(`http://localhost:8080/api/devices/${deviceId}/history?limit=${rawLimit}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return;
       const data = await res.json();
       const rows = (data.data || []) as any[];
@@ -106,13 +108,10 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
 
   // Adaptive polling unified (history only)
   useEffect(() => {
-    const CRITICAL_BOOST_MS = 2 * 60 * 1000;
-    const now = Date.now();
-    const inCriticalWindow = lastCriticalAt !== null && (now - lastCriticalAt) < CRITICAL_BOOST_MS;
-    const intervalMs = inCriticalWindow ? 5000 : 30000;
+    const intervalMs = 1000; // poll every 1s
     const t = setInterval(fetchStatusHistory, intervalMs);
     return () => clearInterval(t);
-  }, [fetchStatusHistory, lastCriticalAt]);
+  }, [fetchStatusHistory]);
 
   const handleLogout = () => { logoutUser(); onBack(); };
 
