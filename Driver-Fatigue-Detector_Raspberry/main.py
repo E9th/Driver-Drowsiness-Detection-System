@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Import core modules
 from core.detector import FatigueDetector
 from core.notification_handler import notification_handler, initialize_notification_handler, cleanup_notification_handler
+from core.sound import start_alarm_thread  # Import the sound module for alarm
 
 # Import GUI modules
 from gui.gui_main import FatigueDetectionGUI
@@ -107,6 +108,9 @@ class DriverFatigueDetectionSystem:
             # Stop notification handler
             print("🔔 Stopping notification handler...")
             cleanup_notification_handler()
+
+            # Stop alarm sound
+            start_alarm_thread("NORMAL")
             
             # Stop detector
             if self.detector:

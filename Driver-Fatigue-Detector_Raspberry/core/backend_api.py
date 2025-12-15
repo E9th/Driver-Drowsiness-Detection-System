@@ -6,6 +6,7 @@ Replaces Firebase connection with HTTP requests to Go backend
 import requests
 from datetime import datetime, timezone
 import logging
+import time
 
 # Backend Configuration
 BACKEND_URL = "http://localhost:8080"  # Change to your production URL when deployed
@@ -14,6 +15,11 @@ DEVICE_ID = "device_01"  # Unique device identifier
 # Connection status
 backend_connected = False
 
+# PERFORMANCE FIX: Cooldown system to prevent video stuttering
+# เพิ่มระบบ cooldown เพื่อไม่ให้พยายามเชื่อมต่อบ่อยเกินไป ทำให้วีดีโอสะดุด
+last_connection_attempt = 0  # เวลาที่พยายามเชื่อมต่อครั้งล่าสุด
+CONNECTION_RETRY_COOLDOWN = 30  # รอ 30 วินาทีก่อนจะลองเชื่อมต่อใหม่
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,28 +27,48 @@ logger = logging.getLogger(__name__)
 
 def initialize_backend():
     """Test connection to backend API"""
-    global backend_connected
+    global backend_connected, last_connection_attempt
+    
+    # PERFORMANCE FIX: ลด timeout เพื่อไม่ให้วีดีโอสะดุด
+    # เดิม: timeout=5 วินาที → ใหม่: timeout=0.3 วินาที
     try:
-        response = requests.get(f"{BACKEND_URL}/api/health", timeout=5)
+        response = requests.get(f"{BACKEND_URL}/api/health", timeout=0.3) #ตั้ง timeout เป็น 0.3 วินาที ตอนทดสอบ เมื่อใช้งานจริงอาจเพิ่มเป็น 1 วินาที
         if response.status_code == 200:
             logger.info(f"✅ Backend connected successfully: {BACKEND_URL}")
             backend_connected = True
+            last_connection_attempt = time.time()
             return True
         else:
             logger.error(f"❌ Backend returned status {response.status_code}")
             backend_connected = False
+            last_connection_attempt = time.time()
             return False
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Failed to connect to backend: {e}")
         backend_connected = False
+        last_connection_attempt = time.time()
         return False
 
 def _ensure_connection():
-    """Lazy-initialize backend connection if not yet connected."""
-    global backend_connected
-    if not backend_connected:
-        initialize_backend()
-    return backend_connected
+    """
+    Lazy-initialize backend connection if not yet connected.
+    PERFORMANCE FIX: ใช้ cooldown system เพื่อไม่ให้พยายามเชื่อมต่อบ่อยเกินไป
+    """
+    global backend_connected, last_connection_attempt
+    
+    if backend_connected:
+        return True
+    
+    # PERFORMANCE FIX: เช็ค cooldown ก่อนพยายามเชื่อมต่อใหม่
+    # ถ้าเพิ่งพยายามเชื่อมต่อไป ไม่ถึง 30 วินาที ก็ไม่ต้องลองใหม่
+    # ป้องกันการ timeout ซ้ำๆ ที่ทำให้วีดีโอสะดุด
+    current_time = time.time()
+    if current_time - last_connection_attempt < CONNECTION_RETRY_COOLDOWN:
+        # ยังไม่ถึงเวลาที่จะลองเชื่อมต่อใหม่
+        return False
+    
+    # ถ้าถึงเวลาแล้ว ก็ลองเชื่อมต่อใหม่
+    return initialize_backend()
 
 
 def _map_status_to_level(status: str) -> str:
@@ -71,10 +97,11 @@ def send_data_to_backend(data):
             "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
         }
 
+        # PERFORMANCE FIX: ลด timeout เป็น 0.3 วินาที (เดิม: 5 วินาที)
         response = requests.post(
             f"{BACKEND_URL}/api/devices/{DEVICE_ID}/data",
             json=payload,
-            timeout=5,
+            timeout=0.3,
         )
         
         if response.status_code == 200:
@@ -110,10 +137,11 @@ def send_alert_to_backend(alert_type, severity="medium"):
         }
         
         # Send POST request to backend
+        # PERFORMANCE FIX: ลด timeout เป็น 0.3 วินาที (เดิม: 5 วินาที)
         response = requests.post(
             f"{BACKEND_URL}/api/devices/{DEVICE_ID}/alert",
             json=alert_data,
-            timeout=5
+            timeout=0.3
         )
         
         if response.status_code == 200:
@@ -144,9 +172,10 @@ def get_latest_data():
         return None
     
     try:
+        # PERFORMANCE FIX: ลด timeout เป็น 0.3 วินาที (เดิม: 5 วินาที)
         response = requests.get(
             f"{BACKEND_URL}/api/devices/{DEVICE_ID}/data",
-            timeout=5
+            timeout=0.3
         )
         
         if response.status_code == 200:
