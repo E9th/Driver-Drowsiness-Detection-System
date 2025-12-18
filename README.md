@@ -1,16 +1,20 @@
-# 🚗 Driver Drowsiness Detection System
-
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.0-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![Go](https://img.shields.io/badge/go-1.21+-blue.svg)
-![React](https://img.shields.io/badge/react-18.3+-blue.svg)
+# 🚗 Driver Drowsiness Detection System
 
-**A comprehensive real-time driver fatigue detection system with AI-powered monitoring, web dashboard, and alert management**
+[![Version](https://img.shields.io/badge/version-2.0-blue.svg?style=for-the-badge)](https://github.com)
+[![License](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Go](https://img.shields.io/badge/go-1.21+-00ADD8.svg?style=for-the-badge&logo=go&logoColor=white)](https://golang.org)
+[![React](https://img.shields.io/badge/react-18.3+-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org)
+
+### 🎯 A comprehensive real-time driver fatigue detection system with AI-powered monitoring, web dashboard, and alert management
 
 *Final Year Project - Computer Engineering*
+
+---
+
+[📋 Table of Contents](#-table-of-contents) • [🎥 Demo](#-video-demo) • [🚀 Quick Start](#-installation--setup) • [📖 Documentation](#-api-documentation) • [👥 Authors](#-authors)
 
 </div>
 
@@ -18,80 +22,169 @@
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Authors](#authors)
-- [Features](#features)
-- [System Architecture](#system-architecture)
-- [Technology Stack](#technology-stack)
-- [Project Structure](#project-structure)
-- [Installation & Setup](#installation--setup)
-- [Usage](#usage)
-- [API Documentation](#api-documentation)
-- [Configuration](#configuration)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
-- [License](#license)
+- [🎯 Overview](#-overview)
+- [🎥 Video Demo](#-video-demo)
+- [👥 Authors](#-authors)
+- [✨ Features](#-features)
+- [🏗️ System Architecture](#️-system-architecture)
+- [🛠️ Technology Stack](#️-technology-stack)
+- [📁 Project Structure](#-project-structure)
+- [🚀 Installation & Setup](#-installation--setup)
+- [💻 Usage](#-usage)
+- [📡 API Documentation](#-api-documentation)
+- [⚙️ Configuration](#️-configuration)
+- [🚢 Deployment](#-deployment)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
 
 ---
 
 ## 🎯 Overview
 
+<div align="center">
+
+### 🌟 **An Intelligent Solution for Road Safety**
+
+</div>
+
 The **Driver Drowsiness Detection System** is an intelligent solution designed to monitor driver fatigue in real-time using computer vision and machine learning. The system consists of three main components:
 
-1. **AI Detection Module** - Real-time face and eye tracking using OpenCV and MediaPipe
-2. **Backend API** - RESTful API built with Go for data management and device communication
-3. **Web Dashboard** - Modern React-based frontend for monitoring and analytics
+<div align="center">
+
+| 🧠 **AI Detection Module** | 🔧 **Backend API** | 🎨 **Web Dashboard** |
+|:---:|:---:|:---:|
+| Real-time face and eye tracking | RESTful API for data management | Modern React-based frontend |
+| OpenCV & MediaPipe | Go & PostgreSQL | TypeScript & Tailwind CSS |
+
+</div>
 
 The system continuously analyzes driver behavior, detects signs of drowsiness, and triggers alerts to prevent accidents. It provides comprehensive dashboards for both drivers and administrators to monitor fatigue levels, view historical data, and manage alerts.
 
 ---
 
+## 🎥 Video Demo
+
+<div align="center">
+
+### 🎬 **AI Drowsiness Detection in Action**
+
+Watch our AI system detect driver drowsiness in real-time using facial recognition and eye tracking technology.
+
+</div>
+
+<div align="center">
+
+**📹 Demo Video: AI Face Detection & Drowsiness Monitoring**
+
+[![Watch the Demo](https://img.shields.io/badge/▶️-Watch%20Demo-red?style=for-the-badge&logo=youtube)](Driver-Fatigue-Detector_Raspberry/demo_ai.mkv)
+
+<details>
+<summary><b>📺 Click to view video demo</b></summary>
+
+**Video Location:** `Driver-Fatigue-Detector_Raspberry/demo_ai.mkv`
+
+This demonstration video showcases:
+- ✅ Real-time face detection using Haar Cascade classifier
+- ✅ Eye landmark detection with MediaPipe
+- ✅ Eye Aspect Ratio (EAR) calculation
+- ✅ Drowsiness level classification (Normal → Low → Medium → High)
+- ✅ Visual feedback with live video feed
+- ✅ Audio alert system activation
+- ✅ GUI interface with status indicators
+
+> 💡 **Note:** To view the video, download the file `demo_ai.mkv` from the `Driver-Fatigue-Detector_Raspberry` directory.
+
+</details>
+
+</div>
+
+---
+
 ## 👥 Authors
 
-This project was developed as a final year project in Computer Engineering by:
+<div align="center">
 
-- **Mr. Patchara Al-umaree**
-- **Mr. Thanapon Dongphuyaw**
-- **Mr. Disorn Suppartum**
+### 🎓 **Final Year Project - Computer Engineering**
+
+This project was developed by:
+
+<table>
+<tr>
+<td align="center">
+<strong>Mr. Patchara Al-umaree</strong>
+</td>
+<td align="center">
+<strong>Mr. Thanapon Dongphuyaw</strong>
+</td>
+<td align="center">
+<strong>Mr. Disorn Suppartum</strong>
+</td>
+</tr>
+</table>
+
+</div>
 
 ---
 
 ## ✨ Features
 
 ### 🤖 AI Detection Module
-- **Real-time Face Detection** - Haar Cascade classifier for robust face detection
-- **Eye Aspect Ratio (EAR) Calculation** - Precise eye closure detection using facial landmarks
-- **Drowsiness Level Classification** - Multi-level fatigue detection (normal, low, medium, high)
-- **Visual Feedback** - Real-time GUI with live video feed and status indicators
-- **Audio Alerts** - Automatic alarm system when drowsiness is detected
-- **Cross-platform Support** - Works on Raspberry Pi and Windows systems
+
+<div align="center">
+
+| Feature | Description |
+|:---:|:---|
+| 👁️ **Real-time Face Detection** | Haar Cascade classifier for robust face detection |
+| 📊 **Eye Aspect Ratio (EAR) Calculation** | Precise eye closure detection using facial landmarks |
+| 🎯 **Drowsiness Level Classification** | Multi-level fatigue detection (normal, low, medium, high) |
+| 🖥️ **Visual Feedback** | Real-time GUI with live video feed and status indicators |
+| 🔊 **Audio Alerts** | Automatic alarm system when drowsiness is detected |
+| 🔄 **Cross-platform Support** | Works on Raspberry Pi and Windows systems |
+
+</div>
 
 ### 🔧 Backend API
-- **RESTful Architecture** - Clean and well-structured API endpoints
-- **PostgreSQL Database** - Reliable data storage with automatic migrations
-- **JWT Authentication** - Secure user authentication and authorization
-- **Real-time Data Processing** - Efficient handling of device data streams
-- **Alert Management** - Comprehensive alert tracking and acknowledgment system
-- **Admin Dashboard Support** - Specialized endpoints for administrative functions
-- **Automatic Data Purge** - Daily cleanup of old data to maintain performance
+
+<div align="center">
+
+| Feature | Description |
+|:---:|:---|
+| 🌐 **RESTful Architecture** | Clean and well-structured API endpoints |
+| 🗄️ **PostgreSQL Database** | Reliable data storage with automatic migrations |
+| 🔐 **JWT Authentication** | Secure user authentication and authorization |
+| ⚡ **Real-time Data Processing** | Efficient handling of device data streams |
+| 🚨 **Alert Management** | Comprehensive alert tracking and acknowledgment system |
+| 👨‍💼 **Admin Dashboard Support** | Specialized endpoints for administrative functions |
+| 🧹 **Automatic Data Purge** | Daily cleanup of old data to maintain performance |
+
+</div>
 
 ### 🎨 Web Dashboard
-- **Modern UI/UX** - Beautiful, responsive design built with React and Tailwind CSS
-- **Driver Dashboard** - Personal monitoring interface with real-time statistics
-- **Master Dashboard** - Administrative overview with multi-driver analytics
-- **User Authentication** - Secure login and registration system
-- **Profile Management** - User profile customization and settings
-- **Data Visualization** - Interactive charts and graphs using Recharts
-- **Real-time Updates** - Live data synchronization with backend
+
+<div align="center">
+
+| Feature | Description |
+|:---:|:---|
+| 🎨 **Modern UI/UX** | Beautiful, responsive design built with React and Tailwind CSS |
+| 🚗 **Driver Dashboard** | Personal monitoring interface with real-time statistics |
+| 👑 **Master Dashboard** | Administrative overview with multi-driver analytics |
+| 🔑 **User Authentication** | Secure login and registration system |
+| 👤 **Profile Management** | User profile customization and settings |
+| 📈 **Data Visualization** | Interactive charts and graphs using Recharts |
+| 🔄 **Real-time Updates** | Live data synchronization with backend |
+
+</div>
 
 ---
 
 ## 🏗️ System Architecture
 
+<div align="center">
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Driver Drowsiness Detection System        │
-└─────────────────────────────────────────────────────────────┘
+╔═══════════════════════════════════════════════════════════════╗
+║          🚗 Driver Drowsiness Detection System 🚗              ║
+╚═══════════════════════════════════════════════════════════════╝
                               │
         ┌─────────────────────┼─────────────────────┐
         │                     │                     │
@@ -115,44 +208,91 @@ This project was developed as a final year project in Computer Engineering by:
                     └─────────────────┘
 ```
 
-### Data Flow
+</div>
 
-1. **Detection**: AI module captures video feed and analyzes driver's face
-2. **Processing**: Eye aspect ratio and drowsiness metrics are calculated
-3. **Transmission**: Data is sent to Go backend via REST API
-4. **Storage**: Backend stores data in PostgreSQL database
-5. **Visualization**: React frontend fetches and displays data in real-time
-6. **Alerts**: System triggers audio/visual alerts when drowsiness is detected
+### 📊 Data Flow
+
+<div align="center">
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Detection  │────▶│ Processing  │────▶│Transmission │
+│  (Camera)   │     │  (EAR Calc) │     │  (REST API) │
+└─────────────┘     └─────────────┘     └─────────────┘
+                                              │
+                                              ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│Visualization│◀────│  Storage    │◀────│   Backend   │
+│  (Frontend) │     │ (PostgreSQL)│     │   (Go API)  │
+└─────────────┘     └─────────────┘     └─────────────┘
+       │
+       ▼
+┌─────────────┐
+│   Alerts    │
+│ (Audio/UI)  │
+└─────────────┘
+```
+
+**Flow Steps:**
+1. 📹 **Detection** - AI module captures video feed and analyzes driver's face
+2. 🧮 **Processing** - Eye aspect ratio and drowsiness metrics are calculated
+3. 📡 **Transmission** - Data is sent to Go backend via REST API
+4. 💾 **Storage** - Backend stores data in PostgreSQL database
+5. 📊 **Visualization** - React frontend fetches and displays data in real-time
+6. 🚨 **Alerts** - System triggers audio/visual alerts when drowsiness is detected
+
+</div>
 
 ---
 
 ## 🛠️ Technology Stack
 
-### AI Detection Module
-- **Python 3.10+**
-- **OpenCV** - Computer vision and image processing
-- **MediaPipe** - Face and landmark detection
-- **NumPy** - Numerical computations
-- **SciPy** - Scientific computing
-- **Tkinter** - GUI framework
-- **Requests** - HTTP client for API communication
+### 🤖 AI Detection Module
 
-### Backend API
-- **Go 1.21+**
-- **Gin** - Web framework
-- **PostgreSQL** - Relational database
-- **JWT** - Authentication tokens
-- **GORM** - Database ORM (if applicable)
+<div align="center">
 
-### Frontend Dashboard
-- **React 18.3**
-- **TypeScript** - Type-safe JavaScript
-- **Vite** - Build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **Radix UI** - Accessible component library
-- **Recharts** - Chart library
-- **React Hook Form** - Form management
-- **Lucide React** - Icon library
+| Technology | Purpose |
+|:---:|:---|
+| 🐍 **Python 3.10+** | Core programming language |
+| 📷 **OpenCV** | Computer vision and image processing |
+| 👁️ **MediaPipe** | Face and landmark detection |
+| 🔢 **NumPy** | Numerical computations |
+| 🔬 **SciPy** | Scientific computing |
+| 🖼️ **Tkinter** | GUI framework |
+| 🌐 **Requests** | HTTP client for API communication |
+
+</div>
+
+### 🔧 Backend API
+
+<div align="center">
+
+| Technology | Purpose |
+|:---:|:---|
+| 🐹 **Go 1.21+** | Core programming language |
+| 🚀 **Gin** | Web framework |
+| 🗄️ **PostgreSQL** | Relational database |
+| 🔐 **JWT** | Authentication tokens |
+| 📦 **lib/pq** | PostgreSQL driver |
+
+</div>
+
+### 🎨 Frontend Dashboard
+
+<div align="center">
+
+| Technology | Purpose |
+|:---:|:---|
+| ⚛️ **React 18.3** | UI framework |
+| 📘 **TypeScript** | Type-safe JavaScript |
+| ⚡ **Vite** | Build tool and dev server |
+| 🎨 **Tailwind CSS** | Utility-first CSS framework |
+| 🧩 **Radix UI** | Accessible component library |
+| 📈 **Recharts** | Chart library |
+| 📝 **React Hook Form** | Form management |
+| 🎯 **Lucide React** | Icon library |
+
+</div>
 
 ---
 
@@ -218,13 +358,19 @@ Driver-Drowsiness-Detection-System/
 
 ## 🚀 Installation & Setup
 
-### Prerequisites
+### 📦 Prerequisites
 
-- **Python 3.10+** (for AI module)
-- **Go 1.21+** (for backend)
-- **Node.js 18+** and **npm** (for frontend)
-- **PostgreSQL 14+** (for database)
-- **Camera/Webcam** (for detection module)
+<div align="center">
+
+| Requirement | Version | Purpose |
+|:---:|:---:|:---|
+| 🐍 **Python** | 3.10+ | AI Detection Module |
+| 🐹 **Go** | 1.21+ | Backend API |
+| 📦 **Node.js** | 18+ | Frontend Dashboard |
+| 🗄️ **PostgreSQL** | 14+ | Database |
+| 📷 **Camera/Webcam** | Any | Detection Input |
+
+</div>
 
 ### 1. AI Detection Module Setup
 
@@ -302,57 +448,86 @@ The frontend will be available at `http://localhost:3000`
 
 ## 💻 Usage
 
-### Starting the System
+### 🚀 Starting the System
 
-#### 1. Start Backend API:
+<div align="center">
+
+#### **Step-by-Step Startup Guide**
+
+</div>
+
+#### 1️⃣ Start Backend API
+
 ```bash
 cd go-backend
 go run main.go
 ```
-Backend will run on `http://localhost:8080`
 
-#### 2. Start Frontend Dashboard:
+<div align="center">
+
+✅ Backend will run on `http://localhost:8080`
+
+</div>
+
+#### 2️⃣ Start Frontend Dashboard
+
 ```bash
 npm run dev
 ```
-Frontend will run on `http://localhost:3000`
 
-#### 3. Start AI Detection Module:
+<div align="center">
 
-**Windows:**
+✅ Frontend will run on `http://localhost:3000`
+
+</div>
+
+#### 3️⃣ Start AI Detection Module
+
+**🪟 Windows:**
 ```bash
 cd Driver-Fatigue-Detector_Raspberry
 RUN_windows.bat
 ```
 
-**Raspberry Pi:**
+**🍓 Raspberry Pi:**
 ```bash
 cd Driver-Fatigue-Detector_Raspberry
 chmod +x RUN_raspberry.sh
 ./RUN_raspberry.sh
 ```
 
-**Or directly:**
+**🔧 Or directly:**
 ```bash
 python main.py
 ```
 
-### Using the System
+### 📖 Using the System
 
-1. **Registration/Login**: Create an account or login through the web dashboard
-2. **Device Setup**: Ensure your camera is connected and the AI module is running
-3. **Monitoring**: The system will automatically detect and report drowsiness levels
-4. **Dashboard**: View real-time statistics and historical data in the web interface
-5. **Alerts**: System will trigger audio alerts when drowsiness is detected
+<div align="center">
+
+| Step | Action | Description |
+|:---:|:---|:---|
+| 1️⃣ | **Registration/Login** | Create an account or login through the web dashboard |
+| 2️⃣ | **Device Setup** | Ensure your camera is connected and the AI module is running |
+| 3️⃣ | **Monitoring** | The system will automatically detect and report drowsiness levels |
+| 4️⃣ | **Dashboard** | View real-time statistics and historical data in the web interface |
+| 5️⃣ | **Alerts** | System will trigger audio alerts when drowsiness is detected |
+
+</div>
 
 ---
 
 ## 📡 API Documentation
 
-### Base URL
+<div align="center">
+
+### 🌐 **Base URL**
+
 ```
 http://localhost:8080/api
 ```
+
+</div>
 
 ### Authentication Endpoints
 
@@ -537,12 +712,24 @@ Use NSSM (Non-Sucking Service Manager) to create a Windows service.
 
 ## 🤝 Contributing
 
-This is a final year project. Contributions and suggestions are welcome! Please feel free to:
+<div align="center">
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+### 💡 **Contributions Welcome!**
+
+This is a final year project. Contributions and suggestions are welcome!
+
+</div>
+
+<div align="center">
+
+| Step | Action |
+|:---:|:---|
+| 1️⃣ | Fork the repository |
+| 2️⃣ | Create a feature branch |
+| 3️⃣ | Make your changes |
+| 4️⃣ | Submit a pull request |
+
+</div>
 
 ---
 
@@ -578,18 +765,37 @@ SOFTWARE.
 
 ## 🙏 Acknowledgments
 
-- OpenCV community for computer vision tools
-- MediaPipe team for face detection models
-- React and Go communities for excellent frameworks
-- All open-source contributors whose libraries made this project possible
+<div align="center">
+
+### 🌟 **Special Thanks**
+
+| Organization/Project | Contribution |
+|:---:|:---|
+| 👁️ **OpenCV Community** | Computer vision tools and libraries |
+| 🤖 **MediaPipe Team** | Face detection models and landmarks |
+| ⚛️ **React Community** | Excellent frontend framework |
+| 🐹 **Go Community** | Robust backend framework |
+| 🌍 **Open Source Contributors** | All libraries that made this project possible |
+
+</div>
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by Computer Engineering Students**
+---
 
-*Final Year Project - Driver Drowsiness Detection System*
+### 🎓 **Made with ❤️ by Computer Engineering Students**
+
+**Final Year Project - Driver Drowsiness Detection System**
+
+---
+
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+[![Documentation](https://img.shields.io/badge/Documentation-README-blue?style=for-the-badge)](README.md)
+
+**⭐ Star this repository if you find it helpful!**
 
 </div>
   
