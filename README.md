@@ -76,12 +76,16 @@ Watch our AI system detect driver drowsiness in real-time using facial recogniti
 
 **📹 Demo Video: AI Face Detection & Drowsiness Monitoring**
 
-[![Watch the Demo](https://img.shields.io/badge/▶️-Watch%20Demo-red?style=for-the-badge&logo=youtube)](Driver-Fatigue-Detector_Raspberry/demo_ai.mkv)
+[![Watch the Demo on YouTube](https://img.shields.io/badge/▶️-Watch%20on%20YouTube-red?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/KB7e2CCGpOI)
+
+<a href="https://youtu.be/KB7e2CCGpOI" target="_blank">
+  <img src="https://img.youtube.com/vi/KB7e2CCGpOI/maxresdefault.jpg" alt="Driver Drowsiness Detection Demo" style="max-width:100%; border-radius:8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+</a>
 
 <details>
-<summary><b>📺 Click to view video demo</b></summary>
+<summary><b>📺 Video Details</b></summary>
 
-**Video Location:** `Driver-Fatigue-Detector_Raspberry/demo_ai.mkv`
+**🎥 YouTube Video:** [Watch on YouTube](https://youtu.be/KB7e2CCGpOI)
 
 This demonstration video showcases:
 - ✅ Real-time face detection using Haar Cascade classifier
@@ -92,7 +96,7 @@ This demonstration video showcases:
 - ✅ Audio alert system activation
 - ✅ GUI interface with status indicators
 
-> 💡 **Note:** To view the video, download the file `demo_ai.mkv` from the `Driver-Fatigue-Detector_Raspberry` directory.
+> 💡 **Click the image above or the button to watch the full demo on YouTube!**
 
 </details>
 
