@@ -14,7 +14,7 @@ export function HomePage() {
       <section
           className="py-16"
         style={{
-          backgroundImage: "url(https://i.ibb.co/4Zjbn83L/hero-2.png)",
+          backgroundImage: "url(https://i.ibb.co/KxWsnxyT/hero-2.webp)",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}

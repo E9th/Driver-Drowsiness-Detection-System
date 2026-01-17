@@ -1,12 +1,11 @@
 import { Shield } from "lucide-react";
-import teaser from "./image/gif/teaser.gif";
 
 export function HeroSection() {
   return (
     <section
       className="relative flex items-center py-8 sm:py-12 lg:py-15"
       style={{
-        backgroundImage: "url(https://i.ibb.co/nNSyr93b/hero-1.png)",
+        backgroundImage: "url(https://i.ibb.co/DPcRR1m3/hero-1.webp)",
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}
@@ -63,7 +62,7 @@ export function HeroSection() {
             <div className="relative rounded-2xl p-1 sm:p-2 md:p-3 border border-white/20 shadow-2xl bg-white/30 backdrop-blur-md">
               <div className="w-full h-56 sm:h-64 md:h-80 rounded-xl overflow-hidden">
                 <img
-                  src={teaser}
+                  src="https://s12.gifyu.com/images/bheKN.gif"
                   alt="ระบบตรวจจับความง่วง - ตัวอย่างการทำงาน"
                   className="w-full h-full object-cover"
                 />

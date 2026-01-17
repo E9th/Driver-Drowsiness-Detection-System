@@ -24,7 +24,7 @@ export function Header({ onLoginClick, onSignupClick, onHome }: HeaderProps) {
           <div className="flex items-center space-x-2 min-w-0 flex-1">
             <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-lg overflow-hidden flex-shrink-0">
               <img 
-                src="https://i.ibb.co/JwcgPyVy/logo.png" 
+                src="https://i.ibb.co/RTdNsNcr/logo.webp"
                 alt="Driver Safety AI Logo" 
                 className="w-full h-full object-contain"
               />
