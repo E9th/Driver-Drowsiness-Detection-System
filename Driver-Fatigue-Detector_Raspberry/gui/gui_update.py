@@ -8,6 +8,7 @@ from tkinter import messagebox
 import mediapipe as mp
 from core.backend_api import send_data, send_alert
 from core.calculation import lip_distance
+from core.sound import start_alarm_thread
 
 #-- Global variables for GUI components and state
 video_label = None
@@ -220,6 +221,7 @@ def update_frame() -> None:
             if progress_bar["value"] > 0:
                 progress_bar["value"] -= 1
 
+        start_alarm_thread(status_message)  # drive alarm on status changes
         ear_value_label.config(text=f"{current_ear:.3f}")
         yawn_value_label.config(text=f"{current_mouth_distance:.1f}")
         blink_value_label.config(text=str(eye_blink_count))
