@@ -10,9 +10,9 @@ import time
 import os
 
 # Backend Configuration
-# ใช้ environment variable หรือ default เป็น localhost สำหรับ development
-# สำหรับ production: set BACKEND_URL=https://driver-drowsiness-api.onrender.com
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
+# ใช้ environment variable หรือ default เป็น Render production URL
+# สำหรับ local development: set BACKEND_URL=http://localhost:8080
+BACKEND_URL = os.getenv("BACKEND_URL", "https://driver-drowsiness-api.onrender.com")
 DEVICE_ID = os.getenv("DEVICE_ID", "device_01")  # Unique device identifier
 
 # Connection status
