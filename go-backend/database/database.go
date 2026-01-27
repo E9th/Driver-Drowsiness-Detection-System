@@ -45,8 +45,35 @@ func Close() {
 func Migrate() error {
 	log.Println("📊 Running database migrations...")
 
-	// Create devices table
+	// Create users table FIRST (other tables reference this)
 	_, err := DB.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id SERIAL PRIMARY KEY,
+			email VARCHAR(255) UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			name VARCHAR(100),
+			phone VARCHAR(50),
+			role VARCHAR(50) DEFAULT 'driver',
+			user_type VARCHAR(50),
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Ensure profile columns exist even if users table was created earlier
+	_, _ = DB.Exec(`
+		ALTER TABLE users
+		ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+	`)
+	_, _ = DB.Exec(`
+		ALTER TABLE users
+		ADD COLUMN IF NOT EXISTS user_type VARCHAR(50);
+	`)
+
+	// Create devices table (references users)
+	_, err = DB.Exec(`
 		CREATE TABLE IF NOT EXISTS devices (
 			id VARCHAR(50) PRIMARY KEY,
 			driver_email VARCHAR(255) NOT NULL,
@@ -145,33 +172,6 @@ func Migrate() error {
 	if err != nil {
 		return err
 	}
-
-	// Create users table (authentication)
-	_, err = DB.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
-			email VARCHAR(255) UNIQUE NOT NULL,
-			password_hash TEXT NOT NULL,
-			name VARCHAR(100),
-			phone VARCHAR(50),
-			role VARCHAR(50) DEFAULT 'driver',
-			user_type VARCHAR(50),
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
-	// Ensure profile columns exist even if users table was created earlier
-	_, _ = DB.Exec(`
-		ALTER TABLE users
-		ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
-	`)
-	_, _ = DB.Exec(`
-		ALTER TABLE users
-		ADD COLUMN IF NOT EXISTS user_type VARCHAR(50);
-	`)
 
 	log.Println("✅ Database migrations completed successfully")
 	return nil
