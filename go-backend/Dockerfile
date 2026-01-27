@@ -13,8 +13,11 @@ COPY go.mod go.sum ./
 # Download dependencies
 RUN go mod download
 
-# Copy source code
+# Copy source code (excluding files in .dockerignore)
 COPY . .
+
+# Remove standalone utilities that have their own main function
+RUN rm -f gen_admin_hash.go verify_admin_hash.go
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .

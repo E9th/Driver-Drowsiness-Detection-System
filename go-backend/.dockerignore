@@ -9,6 +9,10 @@ driver-drowsiness-backend
 # Test files
 *_test.go
 
+# Standalone Go utilities (have their own main function)
+gen_admin_hash.go
+verify_admin_hash.go
+
 # Environment files (don't include in Docker image)
 .env
 .env.local
