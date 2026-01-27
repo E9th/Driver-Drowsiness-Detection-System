@@ -1,0 +1,42 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+driver-drowsiness-backend
+
+# Test files
+*_test.go
+
+# Environment files (don't include in Docker image)
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Windows batch files
+*.bat
+*.sh
+
+# Temporary files
+tmp/
+temp/
+
+# Logs
+*.log
+logs/

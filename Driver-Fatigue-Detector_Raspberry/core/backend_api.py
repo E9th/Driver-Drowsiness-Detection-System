@@ -7,10 +7,13 @@ import requests
 from datetime import datetime, timezone
 import logging
 import time
+import os
 
 # Backend Configuration
-BACKEND_URL = "http://localhost:8080"  # Change to your production URL when deployed
-DEVICE_ID = "device_01"  # Unique device identifier
+# ใช้ environment variable หรือ default เป็น localhost สำหรับ development
+# สำหรับ production: set BACKEND_URL=https://driver-drowsiness-api.onrender.com
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
+DEVICE_ID = os.getenv("DEVICE_ID", "device_01")  # Unique device identifier
 
 # Connection status
 backend_connected = False
