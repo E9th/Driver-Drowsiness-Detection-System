@@ -51,6 +51,17 @@ func DevToolsManifest(c *gin.Context) {
 	})
 }
 
+// ensureDeviceExists creates a device if it doesn't exist (auto-registration)
+func ensureDeviceExists(deviceID string, driverEmail string) error {
+	// Use UPSERT (INSERT ... ON CONFLICT DO NOTHING)
+	_, err := database.DB.Exec(`
+		INSERT INTO devices (id, driver_email, status, last_update, created_at)
+		VALUES ($1, $2, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (id) DO UPDATE SET last_update = CURRENT_TIMESTAMP
+	`, deviceID, driverEmail)
+	return err
+}
+
 // ReceiveDeviceData receives drowsiness data from Python hardware
 func ReceiveDeviceData(c *gin.Context) {
 	deviceID := c.Param("id")
@@ -59,6 +70,15 @@ func ReceiveDeviceData(c *gin.Context) {
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
 		return
+	}
+
+	// Auto-register device if it doesn't exist
+	driverEmail := payload.DriverEmail
+	if driverEmail == "" {
+		driverEmail = "unknown@device.local" // Default email for unregistered devices
+	}
+	if err := ensureDeviceExists(deviceID, driverEmail); err != nil {
+		log.Printf("⚠️ Warning: Could not ensure device exists: %v", err)
 	}
 
 	// Use server-side timestamp to ensure consistent ordering
@@ -109,6 +129,11 @@ func ReceiveAlert(c *gin.Context) {
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
 		return
+	}
+
+	// Auto-register device if it doesn't exist
+	if err := ensureDeviceExists(deviceID, "unknown@device.local"); err != nil {
+		log.Printf("⚠️ Warning: Could not ensure device exists: %v", err)
 	}
 
 	// Parse timestamp or use current time

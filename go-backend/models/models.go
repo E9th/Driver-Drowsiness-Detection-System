@@ -42,6 +42,7 @@ type DataPayload struct {
 	DrowsinessLevel string  `json:"drowsiness_level"`
 	Status          string  `json:"status"`
 	Timestamp       string  `json:"timestamp,omitempty"`
+	DriverEmail     string  `json:"driver_email,omitempty"` // Optional: for device auto-registration
 }
 
 // AlertPayload is the incoming alert from Python script
