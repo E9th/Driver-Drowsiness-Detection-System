@@ -1,0 +1,34 @@
+# Render Blueprint specification
+# https://render.com/docs/blueprint-spec
+
+services:
+  # Go Backend API Service
+  - type: web
+    name: driver-drowsiness-api
+    runtime: docker
+    rootDir: go-backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: driver-drowsiness-db
+          property: connectionString
+
+databases:
+  # PostgreSQL Database
+  - name: driver-drowsiness-db
+    databaseName: drowsiness_db
+    user: drowsiness_user
+    region: singapore
+    plan: free
+    ipAllowList: []
