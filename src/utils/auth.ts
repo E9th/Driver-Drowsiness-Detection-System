@@ -16,7 +16,10 @@ export interface AuthResult {
   user: AuthUser;
 }
 
-const API_BASE = import.meta?.env?.VITE_API_BASE || "http://localhost:8080/api";
+const API_BASE = import.meta?.env?.VITE_API_BASE || 
+  (window.location.hostname === 'localhost' 
+    ? 'http://localhost:8080/api' 
+    : 'https://driver-drowsiness-api.onrender.com/api');
 const TOKEN_KEY = "auth_token";
 
 export function getToken(): string | null {

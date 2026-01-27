@@ -47,7 +47,10 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   // - กำหนด latestStatus จากแถวแรก (รวม normal ได้)
   // - สร้าง events เฉพาะ medium/high ทุก occurrence (ไม่รวม normal)
   const fetchStatusHistory = useCallback(async () => {
-    const API_BASE = import.meta?.env?.VITE_API_BASE || "http://localhost:8080/api";
+    const API_BASE = import.meta?.env?.VITE_API_BASE || 
+      (window.location.hostname === 'localhost' 
+        ? 'http://localhost:8080/api' 
+        : 'https://driver-drowsiness-api.onrender.com/api');
     try {
       const rawLimit = 300; // เพียงพอต่อวัน
       const res = await fetch(`${API_BASE}/devices/${deviceId}/history?limit=${rawLimit}`, {

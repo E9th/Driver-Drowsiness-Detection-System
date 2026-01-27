@@ -84,7 +84,10 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
 
   // ดึงข้อมูลผู้ขับขี่ทั้งหมด + จำนวนที่กำลังขับขี่จาก backend (PostgreSQL)
   useEffect(() => {
-    const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:8080/api";
+    const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || 
+      (window.location.hostname === 'localhost' 
+        ? 'http://localhost:8080/api' 
+        : 'https://driver-drowsiness-api.onrender.com/api');
 
     async function fetchOverview() {
       try {
