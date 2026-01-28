@@ -345,7 +345,8 @@ func AdminOverview(c *gin.Context) {
 	var alertsToday int
 	var criticalAlertsToday int
 
-	// Simplified query without mock tables - using Thailand timezone (Asia/Bangkok = UTC+7)
+	// Simplified query without mock tables - using Thailand timezone (UTC+7)
+	// Note: timestamp column stores UTC time, so we add 7 hours to convert to Bangkok time
 	query := `
 SELECT
 	COALESCE((SELECT COUNT(*) FROM users WHERE role = 'driver'), 0) AS total_drivers,
@@ -359,13 +360,13 @@ SELECT
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+		WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
 	), 0) AS alerts_today,
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+		WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
 	), 0) AS critical_alerts_today;
 `
@@ -423,13 +424,13 @@ LEFT JOIN LATERAL (
 	SELECT MAX(dd.timestamp) AS last_ts
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+		AND (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
 ) act ON TRUE
 LEFT JOIN LATERAL (
 	SELECT COUNT(*) AS critical_count
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+		AND (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
 		AND LOWER(dd.drowsiness_level) = 'high'
 ) ac ON TRUE
 WHERE u.role = 'driver';`
@@ -567,24 +568,24 @@ func AdminAlertSlots(c *gin.Context) {
 	// Predefine all slots to ensure zero-count slots are included
 	slotLabels := []string{"06-08", "08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22", "22-24"}
 
-	// Using Thailand timezone (Asia/Bangkok = UTC+7)
+	// Using Thailand timezone (UTC+7) - add 7 hours to convert from UTC to Bangkok time
 	query := `
 SELECT
     CASE
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 6 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 8 THEN '06-08'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 8 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 10 THEN '08-10'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 10 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 12 THEN '10-12'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 12 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 14 THEN '12-14'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 14 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 16 THEN '14-16'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 16 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 18 THEN '16-18'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 18 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 20 THEN '18-20'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 20 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 22 THEN '20-22'
-        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 22 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 24 THEN '22-24'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 6 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 8 THEN '06-08'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 8 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 10 THEN '08-10'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 10 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 12 THEN '10-12'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 12 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 14 THEN '12-14'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 14 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 16 THEN '14-16'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 16 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 18 THEN '16-18'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 18 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 20 THEN '18-20'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 20 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 22 THEN '20-22'
+        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 22 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 24 THEN '22-24'
         ELSE NULL
     END AS slot,
     COUNT(*) AS cnt
 FROM drowsiness_data dd
-WHERE (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
   AND LOWER(dd.drowsiness_level) = 'high'
 GROUP BY slot
 HAVING slot IS NOT NULL;
@@ -647,7 +648,7 @@ func AdminAlertLevels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
-	// Using Thailand timezone (Asia/Bangkok = UTC+7)
+	// Using Thailand timezone (UTC+7) - add 7 hours to convert from UTC to Bangkok time
 	query := `
 SELECT
 	COUNT(*) FILTER (WHERE LOWER(dd.drowsiness_level) = 'high') AS high_total,
@@ -656,7 +657,7 @@ FROM drowsiness_data dd
 JOIN devices d ON dd.device_id = d.id
 JOIN users u ON d.user_id = u.id
 WHERE u.role = 'driver'
-  AND (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+  AND (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
 `
 
 	var highCount, mediumCount int
