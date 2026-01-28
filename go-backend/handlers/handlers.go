@@ -1025,3 +1025,143 @@ func paramIDToInt(c *gin.Context, name string) (int, error) {
 	s := c.Param(name)
 	return strconv.Atoi(s)
 }
+
+// ================== SEED & PASSWORD RESET HANDLERS ==================
+
+// SeedAdmin creates an admin account (for initial setup)
+func SeedAdmin(c *gin.Context) {
+	var req struct {
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+		Secret   string `json:"secret"` // Simple protection
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Simple secret check to prevent abuse
+	if req.Secret != "drowsiness-admin-setup-2026" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid setup secret"})
+		return
+	}
+
+	// Check if admin already exists
+	if _, err := database.GetUserByEmail(req.Email); err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Admin already exists"})
+		return
+	}
+
+	// Hash password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	// Create admin user
+	userID, err := database.CreateUser(req.Email, string(hash), req.Name, "admin", "", "admin")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create admin"})
+		return
+	}
+
+	log.Printf("✅ Admin account created: %s (ID: %d)", req.Email, userID)
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"message": "Admin account created successfully",
+		"user_id": userID,
+	})
+}
+
+// ForgotPassword initiates password reset
+func ForgotPassword(c *gin.Context) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Check if user exists
+	user, err := database.GetUserByEmail(req.Email)
+	if err != nil {
+		// Don't reveal if email exists for security
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "If the email exists, a reset code has been sent",
+		})
+		return
+	}
+
+	// Generate 6-digit reset code
+	resetCode := generateResetCode()
+
+	// Store reset code in database (valid for 15 minutes)
+	err = database.StoreResetCode(user.ID, resetCode)
+	if err != nil {
+		log.Printf("❌ Failed to store reset code: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate reset code"})
+		return
+	}
+
+	// In production, send email here
+	// For now, log the code (REMOVE IN PRODUCTION!)
+	log.Printf("🔑 Reset code for %s: %s", req.Email, resetCode)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"message":    "If the email exists, a reset code has been sent",
+		"reset_code": resetCode, // REMOVE IN PRODUCTION - only for testing!
+	})
+}
+
+// ResetPassword completes password reset
+func ResetPassword(c *gin.Context) {
+	var req struct {
+		Email       string `json:"email"`
+		ResetCode   string `json:"reset_code"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Validate reset code
+	user, err := database.ValidateResetCode(req.Email, req.ResetCode)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired reset code"})
+		return
+	}
+
+	// Hash new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	// Update password
+	err = database.UpdateUserPassword(user.ID, string(hash))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+
+	// Clear reset code
+	database.ClearResetCode(user.ID)
+
+	log.Printf("✅ Password reset successful for %s", req.Email)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Password reset successful. You can now login with your new password.",
+	})
+}
+
+// generateResetCode creates a 6-digit code
+func generateResetCode() string {
+	return strconv.Itoa(100000 + time.Now().Nanosecond()%900000)
+}

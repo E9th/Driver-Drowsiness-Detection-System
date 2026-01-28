@@ -30,14 +30,17 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
     return { eventsToday, lastEvent };
   }, [allEvents]);
 
-  // แสดงเวลาแบบ UTC HH:mm:ss ตาม schema (timestamp เก็บเป็น UTC 'Z')
+  // แสดงเวลาแบบ Thailand Time (GMT+7)
   const formatTime = useCallback((iso: string) => {
     try {
       const d = new Date(iso);
-      const hh = d.getUTCHours().toString().padStart(2, '0');
-      const mm = d.getUTCMinutes().toString().padStart(2, '0');
-      const ss = d.getUTCSeconds().toString().padStart(2, '0');
-      return `${hh}:${mm}:${ss}`;
+      return d.toLocaleTimeString('th-TH', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Bangkok'
+      });
     } catch { return "-"; }
   }, []);
 

@@ -94,9 +94,14 @@ func setupRouter() *gin.Engine {
 		api.POST("/auth/register", handlers.Register)
 		api.POST("/auth/login", handlers.Login)
 		api.GET("/auth/me", handlers.AuthMiddleware(), handlers.Me)
+		api.POST("/auth/forgot-password", handlers.ForgotPassword)
+		api.POST("/auth/reset-password", handlers.ResetPassword)
 
 		// Health check
 		api.GET("/health", handlers.HealthCheck)
+
+		// Seed admin (one-time setup, should be removed in production)
+		api.POST("/seed/admin", handlers.SeedAdmin)
 
 		// Device routes
 		devices := api.Group("/devices")

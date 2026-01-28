@@ -173,6 +173,22 @@ func Migrate() error {
 		return err
 	}
 
+	// Create password_resets table for forgot password feature
+	_, err = DB.Exec(`
+		CREATE TABLE IF NOT EXISTS password_resets (
+			id SERIAL PRIMARY KEY,
+			user_id INT NOT NULL,
+			reset_code VARCHAR(10) NOT NULL,
+			expires_at TIMESTAMP NOT NULL,
+			used BOOLEAN DEFAULT FALSE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
 	log.Println("✅ Database migrations completed successfully")
 	return nil
 }
@@ -330,4 +346,53 @@ func GetPrimaryDeviceForUser(userID int) (string, error) {
 		return "", err
 	}
 	return deviceID, nil
+}
+
+// ================== PASSWORD RESET FUNCTIONS ==================
+
+// StoreResetCode stores a password reset code for a user
+func StoreResetCode(userID int, code string) error {
+	// Delete any existing reset codes for this user
+	_, _ = DB.Exec(`DELETE FROM password_resets WHERE user_id = $1`, userID)
+
+	// Insert new reset code (valid for 15 minutes)
+	_, err := DB.Exec(`
+		INSERT INTO password_resets (user_id, reset_code, expires_at)
+		VALUES ($1, $2, NOW() + INTERVAL '15 minutes')
+	`, userID, code)
+	return err
+}
+
+// ValidateResetCode checks if a reset code is valid and not expired
+func ValidateResetCode(email, code string) (*models.User, error) {
+	var u models.User
+	err := DB.QueryRow(`
+		SELECT u.id, u.email, u.name, u.role
+		FROM users u
+		JOIN password_resets pr ON u.id = pr.user_id
+		WHERE u.email = $1 
+		  AND pr.reset_code = $2 
+		  AND pr.expires_at > NOW() 
+		  AND pr.used = FALSE
+	`, email, code).Scan(&u.ID, &u.Email, &u.Name, &u.Role)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// UpdateUserPassword updates user's password
+func UpdateUserPassword(userID int, passwordHash string) error {
+	_, err := DB.Exec(`
+		UPDATE users SET password_hash = $1 WHERE id = $2
+	`, passwordHash, userID)
+	return err
+}
+
+// ClearResetCode marks reset code as used
+func ClearResetCode(userID int) error {
+	_, err := DB.Exec(`
+		UPDATE password_resets SET used = TRUE WHERE user_id = $1
+	`, userID)
+	return err
 }

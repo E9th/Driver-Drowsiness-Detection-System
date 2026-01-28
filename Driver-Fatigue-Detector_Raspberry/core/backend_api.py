@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 import logging
 import time
 import os
+import threading
+from queue import Queue, Empty
 
 # Backend Configuration
 # ใช้ environment variable หรือ default เป็น Render production URL
@@ -23,23 +25,68 @@ backend_connected = False
 last_connection_attempt = 0  # เวลาที่พยายามเชื่อมต่อครั้งล่าสุด
 CONNECTION_RETRY_COOLDOWN = 30  # รอ 30 วินาทีก่อนจะลองเชื่อมต่อใหม่
 
+# ASYNC QUEUE: ใช้ queue สำหรับส่งข้อมูลแบบ async เพื่อไม่ให้กล้องค้าง
+_data_queue = Queue(maxsize=100)
+_alert_queue = Queue(maxsize=50)
+_worker_running = False
+_worker_thread = None
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _async_worker():
+    """
+    Background worker thread that sends data/alerts to backend.
+    This prevents camera lag by handling network I/O in a separate thread.
+    """
+    global _worker_running
+    while _worker_running:
+        try:
+            # Process data queue
+            try:
+                data = _data_queue.get_nowait()
+                _send_data_sync(data)
+            except Empty:
+                pass
+            
+            # Process alert queue
+            try:
+                alert = _alert_queue.get_nowait()
+                _send_alert_sync(alert['alert_type'], alert['severity'])
+            except Empty:
+                pass
+            
+            # Small sleep to prevent CPU spinning
+            time.sleep(0.01)
+        except Exception as e:
+            logger.error(f"❌ Async worker error: {e}")
+            time.sleep(0.1)
+
+
+def _start_async_worker():
+    """Start the background worker thread if not already running"""
+    global _worker_running, _worker_thread
+    if not _worker_running:
+        _worker_running = True
+        _worker_thread = threading.Thread(target=_async_worker, daemon=True)
+        _worker_thread.start()
+        logger.info("🔄 Async worker started")
+
+
 def initialize_backend():
-    """Test connection to backend API"""
+    """Test connection to backend API and start async worker"""
     global backend_connected, last_connection_attempt
     
     # PERFORMANCE FIX: ลด timeout เพื่อไม่ให้วีดีโอสะดุด
-    # เดิม: timeout=5 วินาที → ใหม่: timeout=0.3 วินาที
     try:
-        response = requests.get(f"{BACKEND_URL}/api/health", timeout=0.3) #ตั้ง timeout เป็น 0.3 วินาที ตอนทดสอบ เมื่อใช้งานจริงอาจเพิ่มเป็น 1 วินาที
+        response = requests.get(f"{BACKEND_URL}/api/health", timeout=1.0)
         if response.status_code == 200:
             logger.info(f"✅ Backend connected successfully: {BACKEND_URL}")
             backend_connected = True
             last_connection_attempt = time.time()
+            _start_async_worker()  # Start async worker when connected
             return True
         else:
             logger.error(f"❌ Backend returned status {response.status_code}")
@@ -63,14 +110,10 @@ def _ensure_connection():
         return True
     
     # PERFORMANCE FIX: เช็ค cooldown ก่อนพยายามเชื่อมต่อใหม่
-    # ถ้าเพิ่งพยายามเชื่อมต่อไป ไม่ถึง 30 วินาที ก็ไม่ต้องลองใหม่
-    # ป้องกันการ timeout ซ้ำๆ ที่ทำให้วีดีโอสะดุด
     current_time = time.time()
     if current_time - last_connection_attempt < CONNECTION_RETRY_COOLDOWN:
-        # ยังไม่ถึงเวลาที่จะลองเชื่อมต่อใหม่
         return False
     
-    # ถ้าถึงเวลาแล้ว ก็ลองเชื่อมต่อใหม่
     return initialize_backend()
 
 
@@ -82,29 +125,22 @@ def _map_status_to_level(status: str) -> str:
         return "medium"
     return "low"
 
-def send_data_to_backend(data):
+
+def _send_data_sync(data):
     """
-    Send minimal payload required by PostgreSQL backend.
-    Only sends: device_id (via URL), drowsiness_level, timestamp, status.
+    Synchronous data send - called by async worker thread.
     """
-    if not backend_connected:
-        if not _ensure_connection():
-            logger.warning("⚠️ Backend not connected, skipping data send")
-            return False
-    
     try:
-        # Build minimal payload
         payload = {
             "drowsiness_level": data.get("drowsiness_level") or _map_status_to_level(data.get("status")),
             "status": data.get("status", "NORMAL"),
             "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
         }
 
-        # PERFORMANCE FIX: ลด timeout เป็น 0.3 วินาที (เดิม: 5 วินาที)
         response = requests.post(
             f"{BACKEND_URL}/api/devices/{DEVICE_ID}/data",
             json=payload,
-            timeout=0.3,
+            timeout=2.0,  # Can use longer timeout since we're in background thread
         )
         
         if response.status_code == 200:
@@ -119,19 +155,10 @@ def send_data_to_backend(data):
         return False
 
 
-def send_alert_to_backend(alert_type, severity="medium"):
+def _send_alert_sync(alert_type, severity):
     """
-    Send alert to backend
-    
-    Args:
-        alert_type (str): Type of alert (e.g., 'drowsiness_detected', 'eye_closure_critical')
-        severity (str): Severity level ('low', 'medium', 'high')
+    Synchronous alert send - called by async worker thread.
     """
-    if not backend_connected:
-        if not _ensure_connection():
-            logger.warning("⚠️ Backend not connected, skipping alert send")
-            return False
-    
     try:
         alert_data = {
             "alert_type": alert_type,
@@ -139,12 +166,10 @@ def send_alert_to_backend(alert_type, severity="medium"):
             "timestamp": datetime.now().isoformat()
         }
         
-        # Send POST request to backend
-        # PERFORMANCE FIX: ลด timeout เป็น 0.3 วินาที (เดิม: 5 วินาที)
         response = requests.post(
             f"{BACKEND_URL}/api/devices/{DEVICE_ID}/alert",
             json=alert_data,
-            timeout=0.3
+            timeout=2.0,
         )
         
         if response.status_code == 200:
@@ -156,6 +181,42 @@ def send_alert_to_backend(alert_type, severity="medium"):
             
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Error sending alert: {e}")
+        return False
+
+
+def send_data_to_backend(data):
+    """
+    Queue data to be sent asynchronously - NON-BLOCKING.
+    This prevents camera lag by not waiting for network I/O.
+    """
+    if not backend_connected:
+        if not _ensure_connection():
+            logger.warning("⚠️ Backend not connected, skipping data send")
+            return False
+    
+    try:
+        # Add to queue instead of sending directly (non-blocking)
+        _data_queue.put_nowait(data)
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ Data queue full, dropping data: {e}")
+        return False
+
+
+def send_alert_to_backend(alert_type, severity="medium"):
+    """
+    Queue alert to be sent asynchronously - NON-BLOCKING.
+    """
+    if not backend_connected:
+        if not _ensure_connection():
+            logger.warning("⚠️ Backend not connected, skipping alert send")
+            return False
+    
+    try:
+        _alert_queue.put_nowait({"alert_type": alert_type, "severity": severity})
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ Alert queue full, dropping alert: {e}")
         return False
 
 
@@ -193,8 +254,9 @@ def get_latest_data():
 
 
 def cleanup_backend():
-    """Cleanup backend connection"""
-    global backend_connected
+    """Cleanup backend connection and stop async worker"""
+    global backend_connected, _worker_running
+    _worker_running = False  # Stop the async worker
     logger.info("🔌 Backend connection closed")
     backend_connected = False
 
