@@ -569,26 +569,29 @@ func AdminAlertSlots(c *gin.Context) {
 	slotLabels := []string{"06-08", "08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22", "22-24"}
 
 	// Using Thailand timezone (UTC+7) - add 7 hours to convert from UTC to Bangkok time
+	// Use subquery because PostgreSQL doesn't allow column aliases in GROUP BY/HAVING
 	query := `
-SELECT
-    CASE
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 6 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 8 THEN '06-08'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 8 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 10 THEN '08-10'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 10 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 12 THEN '10-12'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 12 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 14 THEN '12-14'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 14 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 16 THEN '14-16'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 16 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 18 THEN '16-18'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 18 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 20 THEN '18-20'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 20 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 22 THEN '20-22'
-        WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 22 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 24 THEN '22-24'
-        ELSE NULL
-    END AS slot,
-    COUNT(*) AS cnt
-FROM drowsiness_data dd
-WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
-  AND LOWER(dd.drowsiness_level) = 'high'
-GROUP BY slot
-HAVING slot IS NOT NULL;
+SELECT slot, COUNT(*) AS cnt
+FROM (
+    SELECT
+        CASE
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 6 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 8 THEN '06-08'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 8 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 10 THEN '08-10'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 10 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 12 THEN '10-12'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 12 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 14 THEN '12-14'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 14 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 16 THEN '14-16'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 16 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 18 THEN '16-18'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 18 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 20 THEN '18-20'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 20 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 22 THEN '20-22'
+            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 22 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 24 THEN '22-24'
+            ELSE NULL
+        END AS slot
+    FROM drowsiness_data dd
+    WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+      AND LOWER(dd.drowsiness_level) = 'high'
+) sub
+WHERE slot IS NOT NULL
+GROUP BY slot;
 `
 
 	rows, err := database.DB.Query(query)
