@@ -266,6 +266,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
   };
 
   const [recentAlerts, setRecentAlerts] = useState<RecentAlert[]>([]);
+  const [alertPageSize, setAlertPageSize] = useState<number>(10);
   const [alertLevels, setAlertLevels] = useState<{
     highPct: number;
     mediumPct: number;
@@ -462,17 +463,39 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
           <TabsContent value="alerts" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Bell className="w-5 h-5" />
-                  <span>การแจ้งเตือนล่าสุด</span>
-                </CardTitle>
-                <CardDescription>
-                  รายการการแจ้งเตือนจากระบบตรวจจับความเหนื่อยล้าทั้งหมด
-                </CardDescription>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Bell className="w-5 h-5" />
+                      <span>การแจ้งเตือนล่าสุด</span>
+                    </CardTitle>
+                    <CardDescription>
+                      รายการการแจ้งเตือนจากระบบตรวจจับความเหนื่อยล้าทั้งหมด
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <span>แสดง</span>
+                    {[5, 10, 15].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setAlertPageSize(n)}
+                        className={`h-7 px-2 rounded border text-xs transition ${
+                          alertPageSize === n
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <span>รายการ</span>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {recentAlerts.map((alert, index) => (
+                  {recentAlerts.slice(0, alertPageSize).map((alert, index) => (
                     <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex items-center space-x-4">
                         <div className={`w-3 h-3 rounded-full ${getSeverityColor(alert.severity)}`} />
@@ -483,14 +506,9 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <div className="text-sm text-slate-500 flex items-center space-x-1">
-                          <Clock className="w-3 h-3" />
-                          <span>{alert.time}</span>
-                        </div>
-                        <Button variant="outline" size="sm">
-                          ดูรายละเอียด
-                        </Button>
+                      <div className="text-sm text-slate-500 flex items-center space-x-1">
+                        <Clock className="w-3 h-3" />
+                        <span>{alert.time}</span>
                       </div>
                     </div>
                   ))}

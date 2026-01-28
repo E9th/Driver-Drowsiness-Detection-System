@@ -345,7 +345,7 @@ func AdminOverview(c *gin.Context) {
 	var alertsToday int
 	var criticalAlertsToday int
 
-	// Simplified query without mock tables
+	// Simplified query without mock tables - using Thailand timezone (Asia/Bangkok = UTC+7)
 	query := `
 SELECT
 	COALESCE((SELECT COUNT(*) FROM users WHERE role = 'driver'), 0) AS total_drivers,
@@ -359,13 +359,13 @@ SELECT
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE dd.timestamp::date = CURRENT_DATE
+		WHERE (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
 	), 0) AS alerts_today,
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE dd.timestamp::date = CURRENT_DATE
+		WHERE (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
 	), 0) AS critical_alerts_today;
 `
@@ -394,7 +394,7 @@ func AdminDrivers(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
-	
+
 	const driversQuery = `
 SELECT
 	u.id,
@@ -423,13 +423,13 @@ LEFT JOIN LATERAL (
 	SELECT MAX(dd.timestamp) AS last_ts
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND dd.timestamp::date = CURRENT_DATE
+		AND (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
 ) act ON TRUE
 LEFT JOIN LATERAL (
 	SELECT COUNT(*) AS critical_count
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND dd.timestamp::date = CURRENT_DATE
+		AND (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
 		AND LOWER(dd.drowsiness_level) = 'high'
 ) ac ON TRUE
 WHERE u.role = 'driver';`
@@ -567,23 +567,24 @@ func AdminAlertSlots(c *gin.Context) {
 	// Predefine all slots to ensure zero-count slots are included
 	slotLabels := []string{"06-08", "08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22", "22-24"}
 
+	// Using Thailand timezone (Asia/Bangkok = UTC+7)
 	query := `
 SELECT
     CASE
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 6 AND EXTRACT(HOUR FROM dd.timestamp) < 8 THEN '06-08'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 8 AND EXTRACT(HOUR FROM dd.timestamp) < 10 THEN '08-10'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 10 AND EXTRACT(HOUR FROM dd.timestamp) < 12 THEN '10-12'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 12 AND EXTRACT(HOUR FROM dd.timestamp) < 14 THEN '12-14'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 14 AND EXTRACT(HOUR FROM dd.timestamp) < 16 THEN '14-16'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 16 AND EXTRACT(HOUR FROM dd.timestamp) < 18 THEN '16-18'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 18 AND EXTRACT(HOUR FROM dd.timestamp) < 20 THEN '18-20'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 20 AND EXTRACT(HOUR FROM dd.timestamp) < 22 THEN '20-22'
-        WHEN EXTRACT(HOUR FROM dd.timestamp) >= 22 AND EXTRACT(HOUR FROM dd.timestamp) < 24 THEN '22-24'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 6 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 8 THEN '06-08'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 8 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 10 THEN '08-10'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 10 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 12 THEN '10-12'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 12 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 14 THEN '12-14'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 14 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 16 THEN '14-16'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 16 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 18 THEN '16-18'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 18 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 20 THEN '18-20'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 20 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 22 THEN '20-22'
+        WHEN EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') >= 22 AND EXTRACT(HOUR FROM dd.timestamp AT TIME ZONE 'Asia/Bangkok') < 24 THEN '22-24'
         ELSE NULL
     END AS slot,
     COUNT(*) AS cnt
 FROM drowsiness_data dd
-WHERE dd.timestamp::date = CURRENT_DATE
+WHERE (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
   AND LOWER(dd.drowsiness_level) = 'high'
 GROUP BY slot
 HAVING slot IS NOT NULL;
@@ -646,6 +647,7 @@ func AdminAlertLevels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
+	// Using Thailand timezone (Asia/Bangkok = UTC+7)
 	query := `
 SELECT
 	COUNT(*) FILTER (WHERE LOWER(dd.drowsiness_level) = 'high') AS high_total,
@@ -654,7 +656,7 @@ FROM drowsiness_data dd
 JOIN devices d ON dd.device_id = d.id
 JOIN users u ON d.user_id = u.id
 WHERE u.role = 'driver'
-  AND dd.timestamp::date = CURRENT_DATE
+  AND (dd.timestamp AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
 `
 
 	var highCount, mediumCount int
