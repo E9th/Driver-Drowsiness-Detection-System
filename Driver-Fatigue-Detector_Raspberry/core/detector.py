@@ -7,15 +7,16 @@ from datetime import datetime
 class FatigueDetector:
     def __init__(self):
         # Constants for detection (ที่ 10 FPS: 20 frames ≈ 2 วินาที, 10 frames ≈ 1 วินาที)
-        self.EYE_AR_THRESH = 0.22          # หลับตา EAR จะต่ำกว่านี้ (ไวขึ้นนิดหนึ่ง)
-        self.EYE_AR_CONSEC_FRAMES = 15     # ~1.5 วินาที หลับตาต่อเนื่อง = ง่วง
-        self.MOUTH_AR_THRESH = 0.40        # อ้าปากกว้าง MAR เกินนี้ = หาว (ลดไว้ให้ยิงง่าย)
-        self.MOUTH_AR_CONSEC_FRAMES = 8    # ~0.8 วินาที อ้าปากต่อเนื่อง = หาว (ไม่ต้องรอ 5 วินาที)
+        self.EYE_AR_THRESH = 0.20          # หลับตา EAR จะต่ำกว่านี้ (ไวขึ้นนิดหนึ่ง)
+        self.EYE_AR_CONSEC_FRAMES = 5      # ~0.5 วินาที หลับตาต่อเนื่อง = ง่วง (ลดลงเพื่อทน jitter บน Pi)
+        self.MOUTH_AR_THRESH = 0.35        # อ้าปากกว้าง MAR เกินนี้ = หาว (ลดจาก 0.40 เพราะ MAR ตอนหาว ~0.4)
+        self.MOUTH_AR_CONSEC_FRAMES = 6    # ~0.6 วินาที อ้าปากต่อเนื่อง = หาว
         self.HEAD_TILT_THRESH = 10
         self.HEAD_TILT_CONSEC_FRAMES = 48
         
         # Detection counters
         self.eye_counter = 0
+        self.eye_open_counter = 0   # grace: ต้องได้ 2 เฟรม "เปิดตา" ติดกันถึงจะ reset (ทน 1 เฟรม glitch)
         self.mouth_counter = 0
         self.head_tilt_counter = 0
         
@@ -189,7 +190,9 @@ class FatigueDetector:
             RIGHT_EYE = {"left": 362, "right": 263, "top": 386, "top2": 387, "bottom": 374, "bottom2": 380}
             MOUTH = {"left": 78, "right": 308, "top": 13, "bottom": 14, "top2": 82, "bottom2": 312}
             
+            # Grace frames: ต้องได้ 2 เฟรม EAR สูงติดกันถึงจะ reset (ทน 1 เฟรม glitch)
             if ear < self.EYE_AR_THRESH:
+                self.eye_open_counter = 0
                 self.eye_counter += 1
                 if self.eye_counter >= self.EYE_AR_CONSEC_FRAMES:
                     stats["drowsiness"] = True
@@ -197,7 +200,10 @@ class FatigueDetector:
                     cv2.putText(frame, "DROWSINESS DETECTED!", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
-                self.eye_counter = 0
+                self.eye_open_counter += 1
+                if self.eye_open_counter >= 2:
+                    self.eye_counter = 0
+                    self.eye_open_counter = 0
             
             if mar > self.MOUTH_AR_THRESH:
                 self.mouth_counter += 1
