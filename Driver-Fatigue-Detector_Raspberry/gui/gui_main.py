@@ -174,12 +174,15 @@ def start_gui() -> None:
     main_container = Frame(root, bg=bg_color)
     main_container.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # Left - Video
+    # Left - Status only (headless: no video/landmarks)
     left_frame = Frame(main_container, bg=card_bg, relief="raised", bd=2)
     left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-    Label(left_frame, text="LIVE CAMERA FEED", font=header_font, fg=accent_color, bg=card_bg).pack(pady=(10, 5))
-    video_label = Label(left_frame, bg=card_bg, relief="sunken", bd=2, font=("Arial", 12))
+    Label(left_frame, text="DETECTION STATUS", font=header_font, fg=accent_color, bg=card_bg).pack(pady=(10, 5))
+    Label(left_frame, text="No video — detection active. Status below.", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(pady=(0, 8))
+    status_display_label = Label(left_frame, text="WAITING", font=("Segoe UI", 24, "bold"), fg=warning_color, bg=card_bg)
+    status_display_label.pack(pady=20, padx=10)
+    video_label = Label(left_frame, text="", bg=card_bg, font=("Segoe UI", 10), fg=text_color)  # placeholder, unused
     video_label.pack(pady=10, padx=10, fill="both", expand=True)
 
     # Right - Controls
@@ -249,12 +252,13 @@ def start_gui() -> None:
     Label(footer_frame, text="Driver Fatigue Detection System v2.0 | Professional Edition | Real-time Detection", 
           font=("Segoe UI", 8), fg=text_color, bg=secondary_color).pack(expand=True)
 
-    #-- Set GUI references for update functions
+    #-- Set GUI references for update functions (headless: status_display_label for big status)
     set_gui_refs({
         "video_label": video_label,
         "start_button": start_button,
         "stop_button": stop_button,
         "status_value_label": status_value_label,
+        "status_display_label": status_display_label,
         "progress_bar": progress_bar,
         "blink_value_label": blink_value_label,
         "yawn_count_value_label": yawn_count_value_label,
@@ -263,7 +267,7 @@ def start_gui() -> None:
         "yawn_value_label": yawn_value_label,
         "root": root,
         "vs": vs,
-        "detector": shared_detector,  # pass detector
+        "detector": shared_detector,
         "camera_available": camera_available,
     })
 

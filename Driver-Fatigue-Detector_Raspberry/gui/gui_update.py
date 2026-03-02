@@ -1,18 +1,16 @@
-import cv2
+"""
+Headless detection loop: no video/landmarks. Uses detector only.
+Detection 100%, status display, sound, backend send unchanged.
+"""
 import time
-import imutils
-import numpy as np
-from PIL import Image, ImageTk
-from imutils.video import VideoStream
 from tkinter import messagebox
-import mediapipe as mp
 from core.backend_api import send_data, send_alert
-from core.calculation import lip_distance
 from core.sound import start_alarm_thread
 
 #-- Global variables for GUI components and state
 video_label = None
 status_value_label = None
+status_display_label = None
 progress_bar = None
 ear_value_label = None
 yawn_value_label = None
@@ -23,87 +21,57 @@ start_button = None
 stop_button = None
 root = None
 vs = None
-detector = None  # new reference to shared FatigueDetector
+detector = None
 detection_enabled = False
 camera_available = False
-yawn_start_time = None
 
-#-- Detection parameters
-EYE_AR_THRESH = 0.25
-EYE_AR_CONSEC_FRAMES = 20
+#-- Detection: 10 FPS for stable Pi performance and accurate consecutive-frame counting
+DETECTION_INTERVAL_MS = 100
 FIREBASE_SEND_INTERVAL = 30
 CRITICAL_DEBOUNCE_SECONDS = 10
 YAWN_DEBOUNCE_SECONDS = 3
-COUNTER = 0
-drowsy_active = False  # true while continuous drowsiness event
+CRITICAL_FRAMES_THRESHOLD = 50  # ~5 sec at 10 FPS → CRITICAL
+
+drowsy_active = False
 eye_blink_count = 0
 yawn_count = 0
 progress_full_count = 0
 closed_eye_time = 0
 alert_triggered = False
-mouth_open = False
 last_backend_send_time = 0
-current_detection_data = {}
 last_yawn_event_time = 0.0
 last_yawn_send_time = 0.0
+current_detection_data = {}
 
-#-- Mediapipe Face Mesh setup
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1,
-                                   refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5)
-drawing_spec = mp.solutions.drawing_utils.DrawingSpec(thickness=1, circle_radius=1, color=(0, 255, 0))
 
-#-- Function to set GUI references
 def set_gui_refs(refs):
-    global video_label, start_button, stop_button, status_value_label
+    global video_label, start_button, stop_button, status_value_label, status_display_label
     global progress_bar, blink_value_label, yawn_count_value_label
     global doze_value_label, ear_value_label, yawn_value_label, root
     global vs, camera_available, detector
 
-    video_label = refs["video_label"]
-    start_button = refs["start_button"]
-    stop_button = refs["stop_button"]
-    status_value_label = refs["status_value_label"]
-    progress_bar = refs["progress_bar"]
-    blink_value_label = refs["blink_value_label"]
-    yawn_count_value_label = refs["yawn_count_value_label"]
-    doze_value_label = refs["doze_value_label"]
-    ear_value_label = refs["ear_value_label"]
-    yawn_value_label = refs["yawn_value_label"]
-    root = refs["root"]
+    video_label = refs.get("video_label")
+    start_button = refs.get("start_button")
+    stop_button = refs.get("stop_button")
+    status_value_label = refs.get("status_value_label")
+    status_display_label = refs.get("status_display_label")
+    progress_bar = refs.get("progress_bar")
+    blink_value_label = refs.get("blink_value_label")
+    yawn_count_value_label = refs.get("yawn_count_value_label")
+    doze_value_label = refs.get("doze_value_label")
+    ear_value_label = refs.get("ear_value_label")
+    yawn_value_label = refs.get("yawn_value_label")
+    root = refs.get("root")
+    vs = refs.get("vs")
+    camera_available = refs.get("camera_available", False)
+    detector = refs.get("detector")
 
-    vs = refs["vs"]
-    camera_available = refs["camera_available"]
-    detector = refs.get("detector")  # may be None
-
-#-- Function to calculate Eye Aspect Ratio (EAR)
-def eye_aspect_ratio(landmarks, eye_indices) -> float:
-    """Compute EAR from mediapipe landmarks subset."""
-    p = [np.array([landmarks[i].x, landmarks[i].y]) for i in eye_indices]
-    A = np.linalg.norm(p[1] - p[5])
-    B = np.linalg.norm(p[2] - p[4])
-    C = np.linalg.norm(p[0] - p[3])
-    return (A + B) / (2.0 * C)
-
-#-- Function to draw landmark boxes around eyes and mouth
-def draw_landmark_box(frame, landmarks, indices, color=(0, 255, 0)):
-    h, w = frame.shape[:2]
-    points = np.array([(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in indices])
-    cv2.polylines(frame, [points], isClosed=True, color=color, thickness=1)
 
 def _send_periodic_backend(status_message: str, data: dict) -> None:
-    """Send minimal data to backend at interval; send immediately on critical/yawn."""
     global last_backend_send_time, last_yawn_send_time
     now = time.time()
+    minimal = {"status": status_message, "drowsiness_level": None}
 
-    # Build minimal payload expected by backend (no ear/mouth_distance)
-    minimal = {
-        "status": status_message,
-        # optional drowsiness_level; backend maps from status if missing
-        "drowsiness_level": None,
-    }
-
-    # Immediate send for critical status with debounce (10s)
     if status_message == "CRITICAL: EXTENDED DROWSINESS":
         if now - last_backend_send_time >= CRITICAL_DEBOUNCE_SECONDS:
             send_data(minimal)
@@ -111,7 +79,6 @@ def _send_periodic_backend(status_message: str, data: dict) -> None:
             last_backend_send_time = now
         return
 
-    # Immediate send for YAWN DETECTED with its own debounce
     if status_message == "YAWN DETECTED":
         if now - last_yawn_send_time >= YAWN_DEBOUNCE_SECONDS:
             minimal["drowsiness_level"] = "medium"
@@ -120,146 +87,118 @@ def _send_periodic_backend(status_message: str, data: dict) -> None:
             last_yawn_send_time = now
         return
 
-    # Periodic send otherwise (NORMAL / DROWSINESS DETECTED / others)
     if now - last_backend_send_time >= FIREBASE_SEND_INTERVAL:
         send_data(minimal)
         if status_message == "DROWSINESS DETECTED":
             send_alert("drowsiness_detected", "medium")
         last_backend_send_time = now
 
-#-- Function to update the video frame and perform detection
+
 def update_frame() -> None:
-    """Main per-frame update loop (scheduled with after)."""
-    global COUNTER, eye_blink_count, yawn_count
-    global drowsy_active, mouth_open, alert_triggered, closed_eye_time, progress_full_count
-    global last_backend_send_time, current_detection_data, yawn_start_time, last_yawn_event_time
+    """Headless detection loop: detector only, no video. Updates status, sound, backend."""
+    global drowsy_active, eye_blink_count, yawn_count, progress_full_count
+    global closed_eye_time, alert_triggered, last_yawn_event_time, current_detection_data
 
-    if not detection_enabled or not camera_available:
-        video_label.after(100, update_frame)
+    if not root or not root.winfo_exists():
         return
-    try:
-        if vs:
-            frame = vs.read()
-        elif detector and getattr(detector, "cap", None) and detector.cap.isOpened():
-            ret, frm = detector.cap.read()
-            frame = frm if ret else None
-        else:
-            frame = None
+    if not detection_enabled or not camera_available:
+        root.after(DETECTION_INTERVAL_MS, update_frame)
+        return
+    if not detector or not getattr(detector, "cap", None) or not detector.cap.isOpened():
+        root.after(DETECTION_INTERVAL_MS, update_frame)
+        return
 
-        if frame is None:
-            video_label.after(100, update_frame)
+    try:
+        _, stats = detector.process_frame(skip_draw=True)
+        if not stats:
+            root.after(DETECTION_INTERVAL_MS, update_frame)
             return
-        frame = imutils.resize(frame, width=800)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb)
-        display_frame = frame.copy()
+
+        faces = stats.get("faces_detected", 0)
+        drowsiness = stats.get("drowsiness", False)
+        yawning = stats.get("yawning", False)
+        ear = stats.get("ear", 0.0)
+        mar = stats.get("mar", 0.0)
 
         status_message = "NORMAL"
         status_color = "#4CAF50"
-        current_ear = 0.0
-        current_mouth_distance = 0.0
 
-        if results.multi_face_landmarks:
-            landmarks = results.multi_face_landmarks[0].landmark
-            left_indices = [33, 160, 158, 133, 153, 144]
-            right_indices = [263, 387, 385, 362, 380, 373]
-            left_ear = eye_aspect_ratio(landmarks, left_indices)
-            right_ear = eye_aspect_ratio(landmarks, right_indices)
-            current_ear = (left_ear + right_ear) / 2.0
-            current_mouth_distance = lip_distance(landmarks)
-            draw_landmark_box(display_frame, landmarks, [33, 160, 158, 133, 153, 144], (0, 255, 0))   # ซ้าย
-            draw_landmark_box(display_frame, landmarks, [263, 387, 385, 362, 380, 373], (0, 255, 0))  # ขวา
-            draw_landmark_box(display_frame, landmarks, [13, 14, 17, 18], (0, 165, 255))              # ปาก
-
-            if current_ear < EYE_AR_THRESH:
-                COUNTER += 1
-                closed_eye_time += 1
-                if COUNTER >= EYE_AR_CONSEC_FRAMES:
-                    if not drowsy_active:
-                        eye_blink_count += 1  # count a drowsiness event
-                        drowsy_active = True
-                    status_message = "DROWSINESS DETECTED"
-                    status_color = "#F44336"
-                    if closed_eye_time >= 50:
-                        alert_triggered = True
-                        status_message = "CRITICAL: EXTENDED DROWSINESS"
-                        status_color = "#D32F2F"
-            else:
-                COUNTER = 0
-                drowsy_active = False
-                closed_eye_time = 0
-                alert_triggered = False
-
-            if current_mouth_distance > 0.5:  # MAR Threshold
-                if yawn_start_time is None:
-                    yawn_start_time = time.time()
-                elif time.time() - yawn_start_time > 1.5:
-                    now_t = time.time()
-                    # Cooldown 3 seconds between yawn events to avoid rapid repeats
-                    if not mouth_open and (now_t - last_yawn_event_time) >= 3.0:
-                        yawn_count += 1
-                        mouth_open = True
-                        last_yawn_event_time = now_t
-                    # While mouth is considered open (yawn in progress), keep status as YAWN DETECTED
-                    if mouth_open and status_message == "NORMAL":
-                        status_message = "YAWN DETECTED"
-                        status_color = "#FF9800"
-            else:
-                mouth_open = False
-                yawn_start_time = None
-
-        else:
+        if faces == 0:
             status_message = "NO FACE DETECTED"
             status_color = "#FF9800"
+            closed_eye_time = 0
+            drowsy_active = False
+            alert_triggered = False
+        else:
+            if drowsiness:
+                closed_eye_time += 1
+                if not drowsy_active:
+                    eye_blink_count += 1
+                    drowsy_active = True
+                status_message = "DROWSINESS DETECTED"
+                status_color = "#F44336"
+                if closed_eye_time >= CRITICAL_FRAMES_THRESHOLD:
+                    alert_triggered = True
+                    status_message = "CRITICAL: EXTENDED DROWSINESS"
+                    status_color = "#D32F2F"
+            else:
+                closed_eye_time = 0
+                drowsy_active = False
+                alert_triggered = False
+
+            if yawning:
+                now_t = time.time()
+                if (now_t - last_yawn_event_time) >= 3.0:
+                    yawn_count += 1
+                    last_yawn_event_time = now_t
+                if status_message == "NORMAL":
+                    status_message = "YAWN DETECTED"
+                    status_color = "#FF9800"
 
         if alert_triggered:
-            progress_bar["value"] += 3
-            if progress_bar["value"] >= 100:
-                progress_full_count += 1
-                progress_bar["value"] = 0
+            if progress_bar:
+                progress_bar["value"] = min(100, progress_bar["value"] + 3)
+                if progress_bar["value"] >= 100:
+                    progress_full_count += 1
+                    progress_bar["value"] = 0
         else:
-            if progress_bar["value"] > 0:
-                progress_bar["value"] -= 1
+            if progress_bar and progress_bar["value"] > 0:
+                progress_bar["value"] = max(0, progress_bar["value"] - 1)
 
-        start_alarm_thread(status_message)  # drive alarm on status changes
-        ear_value_label.config(text=f"{current_ear:.3f}")
-        yawn_value_label.config(text=f"{current_mouth_distance:.1f}")
-        blink_value_label.config(text=str(eye_blink_count))
-        yawn_count_value_label.config(text=str(yawn_count))
-        doze_value_label.config(text=str(progress_full_count))
-        status_value_label.config(text=status_message, fg=status_color)
+        start_alarm_thread(status_message)
+        if ear_value_label:
+            ear_value_label.config(text=f"{ear:.3f}")
+        if yawn_value_label:
+            yawn_value_label.config(text=f"{mar:.2f}")
+        if blink_value_label:
+            blink_value_label.config(text=str(eye_blink_count))
+        if yawn_count_value_label:
+            yawn_count_value_label.config(text=str(yawn_count))
+        if doze_value_label:
+            doze_value_label.config(text=str(progress_full_count))
+        if status_value_label:
+            status_value_label.config(text=status_message, fg=status_color)
+        if status_display_label:
+            status_display_label.config(text=status_message, fg=status_color)
 
         current_detection_data = {
-            "ear": current_ear,
-            "mouth_distance": current_mouth_distance,
+            "ear": ear,
+            "mouth_distance": mar,
             "status": status_message,
             "drowsiness_events": eye_blink_count,
             "yawn_events": yawn_count,
-            "critical_alerts": progress_full_count
+            "critical_alerts": progress_full_count,
         }
-
         _send_periodic_backend(status_message, current_detection_data)
 
-        cv2.putText(display_frame, f"EAR: {current_ear:.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-        cv2.putText(display_frame, f"MAR: {current_mouth_distance:.1f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-        # ORIGINAL:
-        # cv2.putText(display_frame, f"Status: {status_message}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0) if status_message == "NORMAL" else (0,0,255), 2)
-        # UPDATED: add orange for YAWN DETECTED
-        status_overlay_color = (0,255,0) if status_message == "NORMAL" else ((0,165,255) if status_message == "YAWN DETECTED" else (0,0,255))
-        cv2.putText(display_frame, f"Status: {status_message}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_overlay_color, 2)
-
-        img = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)))
-        video_label.imgtk = img
-        video_label.configure(image=img)
-        video_label.after(30, update_frame)
-
     except Exception as e:
-        print(f"[Frame Update] Error: {e}")
-        video_label.after(100, update_frame)
+        print(f"[Detection] Error: {e}")
+    finally:
+        if root and root.winfo_exists():
+            root.after(DETECTION_INTERVAL_MS, update_frame)
 
-#-- Functions to control the GUI state and actions
+
 def start_video() -> None:
-    """Start video detection and update GUI elements."""
     global detection_enabled
     detection_enabled = True
     if start_button:
@@ -268,11 +207,12 @@ def start_video() -> None:
         stop_button.config(state="normal")
     if status_value_label:
         status_value_label.config(text="DETECTION ACTIVE", fg="#4CAF50")
+    if status_display_label:
+        status_display_label.config(text="DETECTION ACTIVE", fg="#4CAF50")
     update_frame()
 
-#-- Function to stop video detection and reset the state
+
 def stop_video() -> None:
-    """Stop video detection and update GUI elements."""
     global detection_enabled
     detection_enabled = False
     if start_button:
@@ -281,14 +221,15 @@ def stop_video() -> None:
         stop_button.config(state="disabled")
     if status_value_label:
         status_value_label.config(text="SYSTEM STOPPED", fg="#FF9800")
+    if status_display_label:
+        status_display_label.config(text="STOPPED", fg="#FF9800")
 
-#-- Function to reset all values and GUI components
+
 def reset_values() -> None:
-    """Reset all counters, flags, and GUI elements to initial state."""
-    global eye_blink_count, yawn_count, progress_full_count, COUNTER
-    global closed_eye_time, alert_triggered, mouth_open, drowsy_active
-    eye_blink_count = yawn_count = progress_full_count = COUNTER = closed_eye_time = 0
-    alert_triggered = mouth_open = drowsy_active = False
+    global eye_blink_count, yawn_count, progress_full_count, closed_eye_time
+    global alert_triggered, drowsy_active
+    eye_blink_count = yawn_count = progress_full_count = closed_eye_time = 0
+    alert_triggered = drowsy_active = False
     if blink_value_label:
         blink_value_label.config(text="0")
     if yawn_count_value_label:
@@ -298,43 +239,59 @@ def reset_values() -> None:
     if ear_value_label:
         ear_value_label.config(text="0.000")
     if yawn_value_label:
-        yawn_value_label.config(text="0.0")
+        yawn_value_label.config(text="0.00")
     if progress_bar:
         progress_bar["value"] = 0
     if status_value_label:
         status_value_label.config(text="RESET COMPLETE", fg="#4CAF50")
+    if status_display_label:
+        status_display_label.config(text="RESET", fg="#4CAF50")
 
-#-- Function to exit the program with confirmation
+
 def exit_program():
-    on_closing()  # บน Raspberry Pi ไม่ต้องยืนยัน
+    on_closing()
 
 
-#-- Function to change the camera source dynamically
 def change_camera_source(source: int) -> None:
-    """Change the camera source if using VideoStream; ignored when reusing detector.cap."""
     global vs, camera_available, detection_enabled
     if detector and getattr(detector, "cap", None) and detector.cap.isOpened():
-        messagebox.showinfo("Camera Source", "Shared detector camera in use. Change disabled.")
+        messagebox.showinfo("Camera Source", "Using detector camera. Change disabled in headless mode.")
         return
     if vs:
-        vs.stop()
-    vs = VideoStream(src=source).start()
-    time.sleep(2.0)
-    frame = vs.read()
-    camera_available = frame is not None
-    if camera_available:
-        messagebox.showinfo("Camera Source", f"Camera changed to {source}")
-        if not detection_enabled:
-            start_video()  # auto start after change
-    else:
-        messagebox.showerror("Camera Error", f"Failed to connect to camera {source}")
+        try:
+            vs.stop()
+        except Exception:
+            pass
+    try:
+        from imutils.video import VideoStream
+        vs = VideoStream(src=source).start()
+        time.sleep(2.0)
+        frame = vs.read()
+        camera_available = frame is not None
+        if camera_available:
+            messagebox.showinfo("Camera Source", f"Camera changed to {source}")
+            if not detection_enabled:
+                start_video()
+        else:
+            messagebox.showerror("Camera Error", f"Failed to connect to camera {source}")
+    except Exception as e:
+        messagebox.showerror("Camera Error", str(e))
 
-#-- Function to handle the closing of the GUI window
+
 def on_closing() -> None:
-    """Handle window closing event."""
     global vs
     if vs:
-        vs.stop()
-    cv2.destroyAllWindows()
+        try:
+            vs.stop()
+        except Exception:
+            pass
+    try:
+        import cv2
+        cv2.destroyAllWindows()
+    except Exception:
+        pass
     if root:
-        root.destroy()
+        try:
+            root.destroy()
+        except Exception:
+            pass

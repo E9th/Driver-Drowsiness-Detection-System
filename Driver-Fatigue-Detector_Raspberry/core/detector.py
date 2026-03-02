@@ -6,11 +6,11 @@ from datetime import datetime
 
 class FatigueDetector:
     def __init__(self):
-        # Constants for detection
-        self.EYE_AR_THRESH = 0.25
-        self.EYE_AR_CONSEC_FRAMES = 48
-        self.MOUTH_AR_THRESH = 0.7
-        self.MOUTH_AR_CONSEC_FRAMES = 48
+        # Constants for detection (ที่ 10 FPS: 20 frames ≈ 2 วินาที, 10 frames ≈ 1 วินาที)
+        self.EYE_AR_THRESH = 0.22          # หลับตา EAR จะต่ำกว่านี้ (ไวขึ้นนิดหนึ่ง)
+        self.EYE_AR_CONSEC_FRAMES = 15     # ~1.5 วินาที หลับตาต่อเนื่อง = ง่วง
+        self.MOUTH_AR_THRESH = 0.40        # อ้าปากกว้าง MAR เกินนี้ = หาว (ลดไว้ให้ยิงง่าย)
+        self.MOUTH_AR_CONSEC_FRAMES = 8    # ~0.8 วินาที อ้าปากต่อเนื่อง = หาว (ไม่ต้องรอ 5 วินาที)
         self.HEAD_TILT_THRESH = 10
         self.HEAD_TILT_CONSEC_FRAMES = 48
         
@@ -22,6 +22,8 @@ class FatigueDetector:
         # Detection components
         self.cap = None
         self.face_mesh = None
+        # Low-res for Pi/headless: process at 320px width (0 = full res)
+        self.detection_width = 320
         
         print("👁️ FatigueDetector initialized (MediaPipe mode)")
     
@@ -53,7 +55,7 @@ class FatigueDetector:
             self.face_mesh = mp_face_mesh.FaceMesh(
                 static_image_mode=False,
                 max_num_faces=2,
-                refine_landmarks=False,
+                refine_landmarks=True,   # ให้จุดตา/ปากแม่นขึ้น (เหมือนตอนมีวิดีโอ)
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5
             )
@@ -90,16 +92,22 @@ class FatigueDetector:
         C = dist.euclidean(p1, p4)
         return (A + B) / (2.0 * C) if C else 0.0
 
-    def process_frame(self):
-        """Read one frame and return (frame, stats dict)."""
+    def process_frame(self, skip_draw=False):
+        """Read one frame and return (frame, stats dict). skip_draw=True for headless (no overlay)."""
         if not self.cap or not self.cap.isOpened():
             return None, {}
         
         try:
-            # อ่านเฟรม
             ret, frame = self.cap.read()
             if not ret:
                 return None, {}
+            h, w = frame.shape[:2]
+            # Low-res processing for Pi/headless: faster and detection still accurate (EAR/MAR are ratios)
+            if self.detection_width and self.detection_width < w:
+                new_w = self.detection_width
+                new_h = int(h * new_w / w)
+                frame = cv2.resize(frame, (new_w, new_h))
+                h, w = new_h, new_w
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.face_mesh.process(rgb)
             faces_landmarks = results.multi_face_landmarks or []
@@ -113,10 +121,9 @@ class FatigueDetector:
                 "mar": 0.0,
                 "head_angle": 0.0
             }
-            h, w = frame.shape[:2]
             for face_landmarks in faces_landmarks:
                 points = self._normalize_to_pixels(face_landmarks, w, h)
-                stats = self._analyze_facial_features(frame, points)
+                stats = self._analyze_facial_features(frame, points, skip_draw=skip_draw)
                 detection_stats.update(stats)
             return frame, detection_stats
         except Exception as e:
@@ -130,8 +137,38 @@ class FatigueDetector:
             pts.append((int(lm.x * w), int(lm.y * h)))
         return pts
     
-    def _analyze_facial_features(self, frame, pts):
-        """วิเคราะห์ลักษณะใบหน้า (เฉพาะตรวจจับ ไม่ส่งการแจ้งเตือน)"""
+    def _ear_same_as_video_mode(self, pts):
+        """EAR แบบเดียวกับตอนมีวิดีโอ (gui_update): ชุด landmark เดิม → ค่าใกล้เคียง 0.25 ตอนหลับตา."""
+        left_idx = [33, 160, 158, 133, 153, 144]   # p0..p5 → A=p1-p5, B=p2-p4, C=p0-p3
+        right_idx = [263, 387, 385, 362, 380, 373]
+        def ear_6pt(indices):
+            p = [pts[i] for i in indices]
+            A = dist.euclidean(p[1], p[5])
+            B = dist.euclidean(p[2], p[4])
+            C = dist.euclidean(p[0], p[3])
+            return (A + B) / (2.0 * C) if C else 0.0
+        left_ear = ear_6pt(left_idx)
+        right_ear = ear_6pt(right_idx)
+        return (left_ear + right_ear) / 2.0
+
+    def _mar_same_as_video_mode(self, pts):
+        """MAR แบบเดียวกับ lip_distance ใน calculation.py → ค่าขึ้นถึง ~0.5+ ตอนหาว."""
+        top = np.array([
+            (pts[13][0] + pts[14][0]) / 2,
+            (pts[13][1] + pts[14][1]) / 2
+        ])
+        bottom = np.array([
+            (pts[17][0] + pts[18][0]) / 2,
+            (pts[17][1] + pts[18][1]) / 2
+        ])
+        vertical = np.linalg.norm(top - bottom)
+        left = np.array(pts[61])
+        right = np.array(pts[291])
+        horizontal = np.linalg.norm(left - right)
+        return (vertical / horizontal) if horizontal > 0 else 0.0
+
+    def _analyze_facial_features(self, frame, pts, skip_draw=False):
+        """วิเคราะห์ลักษณะใบหน้า (เฉพาะตรวจจับ ไม่ส่งการแจ้งเตือน). skip_draw=True = headless, no overlay."""
         stats = {
             "drowsiness": False,
             "yawning": False,
@@ -142,51 +179,36 @@ class FatigueDetector:
         }
         
         try:
-            # MediaPipe indices (approximate):
-            # Eyes (corners + vertical)
+            # ใช้สูตร EAR/MAR เดียวกับตอนมีวิดีโอ เพื่อให้ช่วงตัวเลขตรง (หลับตา ~0.2, หาว ~0.5+)
+            ear = self._ear_same_as_video_mode(pts)
+            mar = self._mar_same_as_video_mode(pts)
+            stats["ear"] = ear
+            stats["mar"] = mar
+
             LEFT_EYE = {"left": 33, "right": 133, "top": 159, "top2": 158, "bottom": 145, "bottom2": 153}
             RIGHT_EYE = {"left": 362, "right": 263, "top": 386, "top2": 387, "bottom": 374, "bottom2": 380}
-            # Mouth (corners + vertical)
             MOUTH = {"left": 78, "right": 308, "top": 13, "bottom": 14, "top2": 82, "bottom2": 312}
-            
-            # EAR (average vertical / horizontal)
-            def ear_mp(e):
-                A = (dist.euclidean(pts[e["top"]], pts[e["bottom"]]) + dist.euclidean(pts[e["top2"]], pts[e["bottom2"]])) / 2.0
-                C = dist.euclidean(pts[e["left"]], pts[e["right"]])
-                return A / C if C != 0 else 0.0
-            
-            left_ear = ear_mp(LEFT_EYE)
-            right_ear = ear_mp(RIGHT_EYE)
-            ear = (left_ear + right_ear) / 2.0
-            stats["ear"] = ear
             
             if ear < self.EYE_AR_THRESH:
                 self.eye_counter += 1
                 if self.eye_counter >= self.EYE_AR_CONSEC_FRAMES:
                     stats["drowsiness"] = True
+                if not skip_draw:
                     cv2.putText(frame, "DROWSINESS DETECTED!", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 self.eye_counter = 0
             
-            # MAR
-            def mar_mp(m):
-                A = (dist.euclidean(pts[m["top"]], pts[m["bottom"]]) + dist.euclidean(pts[m["top2"]], pts[m["bottom2"]])) / 2.0
-                C = dist.euclidean(pts[m["left"]], pts[m["right"]])
-                return A / C if C != 0 else 0.0
-            
-            mar = mar_mp(MOUTH)
-            stats["mar"] = mar
             if mar > self.MOUTH_AR_THRESH:
                 self.mouth_counter += 1
                 if self.mouth_counter >= self.MOUTH_AR_CONSEC_FRAMES:
                     stats["yawning"] = True
+                if not skip_draw:
                     cv2.putText(frame, "YAWNING DETECTED!", (10, 60),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 self.mouth_counter = 0
             
-            # Head tilt (compute angle between eye corners)
             head_angle = self._head_tilt_angle_mp(pts[LEFT_EYE["left"]], pts[LEFT_EYE["right"]],
                                                   pts[RIGHT_EYE["left"]], pts[RIGHT_EYE["right"]])
             stats["head_angle"] = head_angle
@@ -194,13 +216,14 @@ class FatigueDetector:
                 self.head_tilt_counter += 1
                 if self.head_tilt_counter >= self.HEAD_TILT_CONSEC_FRAMES:
                     stats["head_tilt"] = True
+                if not skip_draw:
                     cv2.putText(frame, "HEAD TILT DETECTED!", (10, 90),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
                 self.head_tilt_counter = 0
             
-            # Draw simplified contours
-            self._draw_landmarks_mp(frame, pts, LEFT_EYE, RIGHT_EYE, MOUTH)
+            if not skip_draw:
+                self._draw_landmarks_mp(frame, pts, LEFT_EYE, RIGHT_EYE, MOUTH)
         except Exception as e:
             print(f"❌ Error analyzing facial features (MediaPipe): {e}")
         return stats
