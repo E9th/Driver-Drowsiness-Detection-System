@@ -1,8 +1,10 @@
 """
 Headless detection loop: no video/landmarks. Uses detector only.
-Detection 100%, status display, sound, backend send unchanged.
+Detection 100%, status display, sound, backend send, event log.
 """
 import time
+from datetime import datetime
+import tkinter as tk
 from tkinter import messagebox
 from core.backend_api import send_data, send_alert
 from core.sound import start_alarm_thread
@@ -17,11 +19,13 @@ yawn_value_label = None
 blink_value_label = None
 yawn_count_value_label = None
 doze_value_label = None
+event_log_listbox = None
 start_button = None
 stop_button = None
 root = None
 vs = None
 detector = None
+last_logged_status = None
 detection_enabled = False
 camera_available = False
 
@@ -47,8 +51,8 @@ current_detection_data = {}
 def set_gui_refs(refs):
     global video_label, start_button, stop_button, status_value_label, status_display_label
     global progress_bar, blink_value_label, yawn_count_value_label
-    global doze_value_label, ear_value_label, yawn_value_label, root
-    global vs, camera_available, detector
+    global doze_value_label, ear_value_label, yawn_value_label, event_log_listbox
+    global root, vs, camera_available, detector
 
     video_label = refs.get("video_label")
     start_button = refs.get("start_button")
@@ -61,10 +65,28 @@ def set_gui_refs(refs):
     doze_value_label = refs.get("doze_value_label")
     ear_value_label = refs.get("ear_value_label")
     yawn_value_label = refs.get("yawn_value_label")
+    event_log_listbox = refs.get("event_log_listbox")
     root = refs.get("root")
     vs = refs.get("vs")
     camera_available = refs.get("camera_available", False)
     detector = refs.get("detector")
+
+
+def _append_log(message: str, max_entries: int = 100) -> None:
+    """Add timestamped log entry to event log."""
+    global event_log_listbox
+    if not event_log_listbox or not event_log_listbox.winfo_exists():
+        return
+    try:
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        entry = f"[{ts}] {message}"
+        event_log_listbox.insert(tk.END, entry)
+        event_log_listbox.see(tk.END)
+        count = event_log_listbox.size()
+        if count > max_entries:
+            event_log_listbox.delete(0, count - max_entries - 1)
+    except Exception:
+        pass
 
 
 def _send_periodic_backend(status_message: str, data: dict) -> None:
@@ -95,9 +117,10 @@ def _send_periodic_backend(status_message: str, data: dict) -> None:
 
 
 def update_frame() -> None:
-    """Headless detection loop: detector only, no video. Updates status, sound, backend."""
+    """Headless detection loop: detector only, no video. Updates status, sound, backend, log."""
     global drowsy_active, eye_blink_count, yawn_count, progress_full_count
     global closed_eye_time, alert_triggered, last_yawn_event_time, current_detection_data
+    global last_logged_status
 
     if not root or not root.winfo_exists():
         return
@@ -141,6 +164,9 @@ def update_frame() -> None:
                     alert_triggered = True
                     status_message = "CRITICAL: EXTENDED DROWSINESS"
                     status_color = "#D32F2F"
+                    # นับ Critical ทันทีเมื่อเข้าสถานะ CRITICAL (หลับตาต่อเนื่อง ~5 วินาที)
+                    if closed_eye_time == CRITICAL_FRAMES_THRESHOLD:
+                        progress_full_count += 1
             else:
                 closed_eye_time = 0
                 drowsy_active = False
@@ -181,6 +207,11 @@ def update_frame() -> None:
         if status_display_label:
             status_display_label.config(text=status_message, fg=status_color)
 
+        # Log status changes (avoid duplicate consecutive entries)
+        if last_logged_status != status_message:
+            _append_log(status_message)
+            last_logged_status = status_message
+
         current_detection_data = {
             "ear": ear,
             "mouth_distance": mar,
@@ -199,8 +230,10 @@ def update_frame() -> None:
 
 
 def start_video() -> None:
-    global detection_enabled
+    global detection_enabled, last_logged_status
     detection_enabled = True
+    last_logged_status = None
+    _append_log("Detection STARTED")
     if start_button:
         start_button.config(state="disabled", text="SYSTEM RUNNING", bg="#37474F")
     if stop_button:
@@ -215,6 +248,7 @@ def start_video() -> None:
 def stop_video() -> None:
     global detection_enabled
     detection_enabled = False
+    _append_log("Detection STOPPED")
     if start_button:
         start_button.config(state="normal", text="START DETECTION", bg="#4CAF50")
     if stop_button:
@@ -229,6 +263,7 @@ def reset_values() -> None:
     global eye_blink_count, yawn_count, progress_full_count, closed_eye_time
     global alert_triggered, drowsy_active
     eye_blink_count = yawn_count = progress_full_count = closed_eye_time = 0
+    _append_log("Counts RESET")
     alert_triggered = drowsy_active = False
     if blink_value_label:
         blink_value_label.config(text="0")

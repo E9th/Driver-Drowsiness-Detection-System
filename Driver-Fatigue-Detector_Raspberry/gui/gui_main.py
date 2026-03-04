@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import Frame, Label, ttk
+from tkinter import Frame, Label, ttk, Listbox, Scrollbar
 
 # -- Import GUI update functions
 from gui.gui_update import (
@@ -35,6 +35,7 @@ yawn_count_value_label = None
 doze_value_label = None
 ear_value_label = None
 yawn_value_label = None
+event_log_listbox = None
 
 #-- Import necessary modules for video processing
 from imutils.video import VideoStream
@@ -117,7 +118,7 @@ def start_gui() -> None:
     global root, video_label, start_button, stop_button
     global status_value_label, progress_bar
     global blink_value_label, yawn_count_value_label, doze_value_label
-    global ear_value_label, yawn_value_label
+    global ear_value_label, yawn_value_label, event_log_listbox
     global vs, camera_available
 
     # Firebase initialization removed
@@ -174,16 +175,29 @@ def start_gui() -> None:
     main_container = Frame(root, bg=bg_color)
     main_container.pack(fill="both", expand=True, padx=10, pady=10)
 
-    # Left - Status only (headless: no video/landmarks)
+    # Left - Event Log (timestamp + status)
     left_frame = Frame(main_container, bg=card_bg, relief="raised", bd=2)
     left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-    Label(left_frame, text="DETECTION STATUS", font=header_font, fg=accent_color, bg=card_bg).pack(pady=(10, 5))
-    Label(left_frame, text="No video — detection active. Status below.", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(pady=(0, 8))
-    status_display_label = Label(left_frame, text="WAITING", font=("Segoe UI", 24, "bold"), fg=warning_color, bg=card_bg)
-    status_display_label.pack(pady=20, padx=10)
-    video_label = Label(left_frame, text="", bg=card_bg, font=("Segoe UI", 10), fg=text_color)  # placeholder, unused
-    video_label.pack(pady=10, padx=10, fill="both", expand=True)
+    Label(left_frame, text="EVENT LOG", font=header_font, fg=accent_color, bg=card_bg).pack(pady=(10, 5))
+    Label(left_frame, text="Timestamp และสถานะการตรวจจับ", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(pady=(0, 5))
+
+    log_container = Frame(left_frame, bg=card_bg)
+    log_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    log_scrollbar = Scrollbar(log_container, bg=secondary_color)
+    event_log_listbox = Listbox(
+        log_container, font=("Consolas", 10), bg="#1a1a1a", fg=text_color,
+        selectbackground=primary_color, selectforeground=text_color,
+        activestyle="none", height=20, yscrollcommand=log_scrollbar.set
+    )
+    log_scrollbar.config(command=event_log_listbox.yview)
+    event_log_listbox.pack(side="left", fill="both", expand=True)
+    log_scrollbar.pack(side="right", fill="y")
+
+    status_display_label = Label(left_frame, text="WAITING", font=("Segoe UI", 16, "bold"), fg=warning_color, bg=card_bg)
+    status_display_label.pack(pady=(8, 5), padx=10)
+    video_label = Label(left_frame, text="", bg=card_bg, font=("Segoe UI", 10), fg=text_color)  # placeholder for refs
+    video_label.pack(pady=0)
 
     # Right - Controls
     right_frame = Frame(main_container, bg=bg_color, width=400)
@@ -203,30 +217,36 @@ def start_gui() -> None:
 
     _update_device_info(status_info_frame, text_color, card_bg, primary_color, success_color, danger_color)
 
-    # Metrics panel
+    # Metrics panel - จำนวนครั้ง หลับตา หาว Critical
     metrics_frame = Frame(right_frame, bg=card_bg, relief="raised", bd=2)
     metrics_frame.pack(fill="x", pady=(0, 5))
     Label(metrics_frame, text="DETECTION METRICS", font=("Segoe UI", 10, "bold"), fg=accent_color, bg=card_bg).pack(pady=(5, 3))
     metrics_grid = Frame(metrics_frame, bg=card_bg)
     metrics_grid.pack(pady=(0, 5), padx=10, fill="x")
 
-    # Create metrics labels
     def create_metric(label_text: str, var_name: str, default_value: str, color: str):
         row = Frame(metrics_grid, bg=card_bg)
-        row.pack(fill="x", pady=1)
-        Label(row, text=label_text, font=("Segoe UI", 9), fg=text_color, bg=card_bg,
-              width=8, anchor="w").pack(side="left")
-        value_label = Label(row, text=default_value, font=("Segoe UI", 10, "bold"),
-                            fg=color, bg=card_bg, width=6, anchor="e")
+        row.pack(fill="x", pady=3)
+        Label(row, text=label_text, font=("Segoe UI", 10), fg=text_color, bg=card_bg,
+              anchor="w").pack(side="left")
+        value_label = Label(row, text=default_value, font=("Segoe UI", 14, "bold"),
+                            fg=color, bg=card_bg, anchor="e")
         value_label.pack(side="right")
         globals()[var_name] = value_label
 
-    create_metric("EAR:", "ear_value_label", "0.000", primary_color)
-    create_metric("Mouth:", "yawn_value_label", "0.0", primary_color)
-    create_metric("Events:", "blink_value_label", "0", warning_color)
+    create_metric("หลับตา (ครั้ง):", "blink_value_label", "0", warning_color)
+    create_metric("หาว (ครั้ง):", "yawn_count_value_label", "0", accent_color)
+    create_metric("Critical (ครั้ง):", "doze_value_label", "0", danger_color)
 
-    yawn_count_value_label = Label(metrics_grid, text="0", font=("Segoe UI", 10, "bold"), fg=warning_color, bg=card_bg)
-    doze_value_label = Label(metrics_grid, text="0", font=("Segoe UI", 10, "bold"), fg=danger_color, bg=card_bg)
+    # Technical values (EAR, MAR) - optional, smaller
+    tech_frame = Frame(metrics_frame, bg=card_bg)
+    tech_frame.pack(pady=(5, 5), padx=10, fill="x")
+    Label(tech_frame, text="EAR:", font=("Segoe UI", 8), fg=text_color, bg=card_bg).pack(side="left")
+    ear_value_label = Label(tech_frame, text="0.000", font=("Segoe UI", 8), fg=primary_color, bg=card_bg)
+    ear_value_label.pack(side="left", padx=(4, 12))
+    Label(tech_frame, text="MAR:", font=("Segoe UI", 8), fg=text_color, bg=card_bg).pack(side="left")
+    yawn_value_label = Label(tech_frame, text="0.00", font=("Segoe UI", 8), fg=primary_color, bg=card_bg)
+    yawn_value_label.pack(side="left", padx=(4, 0))
 
     # Progress bar
     progress_frame = Frame(right_frame, bg=card_bg, relief="raised", bd=2)
@@ -252,7 +272,7 @@ def start_gui() -> None:
     Label(footer_frame, text="Driver Fatigue Detection System v2.0 | Professional Edition | Real-time Detection", 
           font=("Segoe UI", 8), fg=text_color, bg=secondary_color).pack(expand=True)
 
-    #-- Set GUI references for update functions (headless: status_display_label for big status)
+    #-- Set GUI references for update functions (headless: status_display_label, event_log_listbox)
     set_gui_refs({
         "video_label": video_label,
         "start_button": start_button,
@@ -265,6 +285,7 @@ def start_gui() -> None:
         "doze_value_label": doze_value_label,
         "ear_value_label": ear_value_label,
         "yawn_value_label": yawn_value_label,
+        "event_log_listbox": event_log_listbox,
         "root": root,
         "vs": vs,
         "detector": shared_detector,
