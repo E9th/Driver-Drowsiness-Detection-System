@@ -10,11 +10,16 @@ except ImportError:  # pragma: no cover
 __all__ = ["play_alarm_loop", "play_alarm_once", "start_alarm_thread"]
 
 ALARM_STATUS = "CRITICAL: EXTENDED DROWSINESS"
+BEEP_STATUS = "DROWSINESS DETECTED"
+YAWN_STATUS = "YAWN DETECTED"
 DEFAULT_ALARM_FILE = Path(__file__).with_name("alarm.mp3")
+DEFAULT_BEEP_FILE = Path(__file__).with_name("beep-warning.mp3")
+DEFAULT_YAWN_FILE = Path(__file__).with_name("bip-sound.mp3")
 
 _alarm_thread = None
 _alarm_stop = threading.Event()
 _current_status = None
+_current_loop_status = None
 
 
 def _ensure_mixer():
@@ -53,15 +58,26 @@ def _stop_loop():
 
 def start_alarm_thread(status_message: str, sound_file: Path | str | None = None):
     """Start/stop alarm based on status_message. Plays/loops while status is critical."""
-    global _current_status
+    global _current_status, _current_loop_status
     sound_path = Path(sound_file) if sound_file else DEFAULT_ALARM_FILE
 
     if status_message == ALARM_STATUS:
-        if _current_status != ALARM_STATUS:
-            _start_loop(sound_path)
-    else:
-        if _current_status == ALARM_STATUS:
+        if _current_loop_status != ALARM_STATUS:
             _stop_loop()
+            _start_loop(sound_path)
+        _current_loop_status = ALARM_STATUS
+    elif status_message == YAWN_STATUS:
+        if _current_loop_status != YAWN_STATUS:
+            _stop_loop()
+            _start_loop(DEFAULT_YAWN_FILE)
+        _current_loop_status = YAWN_STATUS
+    else:
+        if _current_loop_status in (ALARM_STATUS, YAWN_STATUS):
+            _stop_loop()
+        _current_loop_status = None
+
+        if status_message == BEEP_STATUS and _current_status != BEEP_STATUS:
+            play_alarm_once(DEFAULT_BEEP_FILE)
     _current_status = status_message
 
 
@@ -76,5 +92,3 @@ def play_alarm_once(sound_file: Path | str | None = None):
     sound_path = Path(sound_file) if sound_file else DEFAULT_ALARM_FILE
     pygame.mixer.music.load(str(sound_path))
     pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        time.sleep(0.05)
