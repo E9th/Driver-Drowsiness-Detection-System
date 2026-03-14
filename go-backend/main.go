@@ -30,6 +30,11 @@ func main() {
 		log.Fatalf("❌ Failed to run migrations: %v", err)
 	}
 
+	// Cleanup duplicate device IDs (case variants) and repair unknown ownership metadata.
+	if err := database.CleanupDuplicateDevices(); err != nil {
+		log.Printf("⚠️ Device cleanup failed: %v", err)
+	}
+
 	// Setup Gin router
 	router := setupRouter()
 

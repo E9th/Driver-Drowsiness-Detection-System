@@ -99,7 +99,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     }));
   }, [alertSlots]);
 
-  // ดึงข้อมูลผู้ขับขี่ทั้งหมด + จำนวนที่กำลังขับขี่จาก backend (PostgreSQL)
+  // ดึงข้อมูลผู้ขับขี่ทั้งหมด + สรุปสถานะจาก backend (PostgreSQL)
   useEffect(() => {
     const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || 
       (window.location.hostname === 'localhost' 
@@ -145,7 +145,13 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
         });
         if (!res.ok) return;
         const data = await res.json();
-        setDriverList(Array.isArray(data.drivers) ? data.drivers : []);
+        const rows = Array.isArray(data.drivers) ? data.drivers : [];
+        setDriverList(rows);
+        const onlineCount = rows.filter((d: any) => !!d?.is_online).length;
+        setDriverOverview((prev) => ({
+          ...prev,
+          activeDrivers: onlineCount,
+        }));
       } catch {
         // fallback: keep current list
       }
@@ -372,7 +378,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
             <CardContent>
               <div className="text-2xl font-bold text-slate-900">{driverOverview.totalDrivers}</div>
               <div className="text-sm text-green-600 flex items-center space-x-1">
-                <span>กำลังขับขี่: {driverOverview.activeDrivers} คน</span>
+                <span>กำลังออนไลน์: {driverOverview.activeDrivers} คน</span>
               </div>
             </CardContent>
           </Card>

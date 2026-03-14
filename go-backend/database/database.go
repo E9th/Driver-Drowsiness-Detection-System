@@ -42,6 +42,175 @@ func Close() {
 	}
 }
 
+// CleanupDuplicateDevices merges duplicate devices that differ only by letter case.
+// Example: device_02 and Device_02 -> keep canonical lowercase `device_02`.
+// It also repairs ownership by preferring non-unknown driver_email/user_id metadata.
+func CleanupDuplicateDevices() error {
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	rows, err := tx.Query(`
+		SELECT id, COALESCE(driver_email, ''), user_id
+		FROM devices
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type deviceRow struct {
+		id          string
+		driverEmail string
+		userID      sql.NullInt64
+	}
+
+	groups := map[string][]deviceRow{}
+	for rows.Next() {
+		var r deviceRow
+		if err = rows.Scan(&r.id, &r.driverEmail, &r.userID); err != nil {
+			return err
+		}
+		canonical := strings.ToLower(strings.TrimSpace(r.id))
+		if canonical == "" {
+			continue
+		}
+		groups[canonical] = append(groups[canonical], r)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+
+	totalMerged := 0
+	for canonicalID, entries := range groups {
+		if len(entries) <= 1 {
+			continue
+		}
+
+		var (
+			canonicalExists bool
+			canonicalEmail  string
+			canonicalUserID sql.NullInt64
+		)
+
+		for _, e := range entries {
+			if e.id == canonicalID {
+				canonicalExists = true
+				canonicalEmail = e.driverEmail
+				canonicalUserID = e.userID
+				break
+			}
+		}
+
+		// Find best metadata source (prefer linked user and non-unknown email).
+		bestEmail := canonicalEmail
+		bestUserID := canonicalUserID
+		for _, e := range entries {
+			email := strings.TrimSpace(strings.ToLower(e.driverEmail))
+			isUsefulEmail := email != "" && email != "unknown@device.local"
+			if !bestUserID.Valid && e.userID.Valid {
+				bestUserID = e.userID
+			}
+			if (!isUsefulEmail && strings.TrimSpace(strings.ToLower(bestEmail)) != "") || !isUsefulEmail {
+				continue
+			}
+			if strings.TrimSpace(strings.ToLower(bestEmail)) == "" || strings.TrimSpace(strings.ToLower(bestEmail)) == "unknown@device.local" {
+				bestEmail = e.driverEmail
+			}
+		}
+
+		if !canonicalExists {
+			driverEmail := strings.TrimSpace(bestEmail)
+			if driverEmail == "" {
+				driverEmail = "unknown@device.local"
+			}
+
+			_, err = tx.Exec(`
+				INSERT INTO devices (id, driver_email, user_id, status, last_update, created_at)
+				VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+				ON CONFLICT (id) DO NOTHING
+			`, canonicalID, driverEmail, bestUserID)
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, e := range entries {
+			if e.id == canonicalID {
+				continue
+			}
+
+			if _, err = tx.Exec(`UPDATE drowsiness_data SET device_id = $1 WHERE device_id = $2`, canonicalID, e.id); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(`UPDATE alerts SET device_id = $1 WHERE device_id = $2`, canonicalID, e.id); err != nil {
+				return err
+			}
+
+			if _, err = tx.Exec(`
+				UPDATE devices
+				SET driver_email = CASE
+						WHEN (driver_email IS NULL OR TRIM(driver_email) = '' OR LOWER(TRIM(driver_email)) = 'unknown@device.local')
+							AND $2 IS NOT NULL AND TRIM($2) <> '' THEN $2
+						ELSE driver_email
+					END,
+					user_id = COALESCE(user_id, $3),
+					last_update = GREATEST(last_update, CURRENT_TIMESTAMP)
+				WHERE id = $1
+			`, canonicalID, e.driverEmail, e.userID); err != nil {
+				return err
+			}
+
+			if _, err = tx.Exec(`DELETE FROM devices WHERE id = $1`, e.id); err != nil {
+				return err
+			}
+
+			totalMerged++
+		}
+	}
+
+	// Backfill user_id from driver_email for any orphan devices.
+	if _, err = tx.Exec(`
+		UPDATE devices d
+		SET user_id = u.id
+		FROM users u
+		WHERE LOWER(TRIM(d.driver_email)) = LOWER(TRIM(u.email))
+		  AND (d.user_id IS NULL OR d.user_id <> u.id)
+	`); err != nil {
+		return err
+	}
+
+	// If device already has user_id but still uses unknown email, rewrite to owner's email.
+	if _, err = tx.Exec(`
+		UPDATE devices d
+		SET driver_email = u.email
+		FROM users u
+		WHERE d.user_id = u.id
+		  AND (TRIM(d.driver_email) = '' OR LOWER(TRIM(d.driver_email)) = 'unknown@device.local')
+	`); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	if totalMerged > 0 {
+		log.Printf("✅ Device cleanup merged %d duplicate device rows", totalMerged)
+	} else {
+		log.Println("✅ Device cleanup: no duplicate case-variant device rows found")
+	}
+
+	return nil
+}
+
 // Migrate creates database tables if they don't exist
 func Migrate() error {
 	log.Println("📊 Running database migrations...")

@@ -239,6 +239,7 @@ func GetDeviceLatestData(c *gin.Context) {
 func GetDeviceHistory(c *gin.Context) {
 	deviceID := canonicalDeviceID(c.Param("id"))
 	limit := c.DefaultQuery("limit", "100")
+	targetDate := getBangkokTargetDate(c)
 
 	// Prevent caching
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
@@ -249,9 +250,10 @@ func GetDeviceHistory(c *gin.Context) {
 		SELECT id, device_id, eye_closure, drowsiness_level, status, timestamp, created_at
 		FROM drowsiness_data
 		WHERE device_id = $1
+		  AND (timestamp + INTERVAL '7 hours')::date = $2::date
 		ORDER BY timestamp DESC, id DESC
-		LIMIT $2
-	`, deviceID, limit)
+		LIMIT $3
+	`, deviceID, targetDate, limit)
 
 	if err != nil {
 		log.Printf("❌ Error fetching history: %v", err)
@@ -276,6 +278,7 @@ func GetDeviceHistory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"device_id": deviceID,
+		"date":      targetDate,
 		"count":     len(history),
 		"data":      history,
 	})
@@ -364,7 +367,7 @@ func GetAllDevices(c *gin.Context) {
 
 // AdminOverview returns aggregated statistics for master dashboard
 // - total_drivers: จำนวนผู้ขับขี่ทั้งหมดจาก users (role='driver')
-// - active_drivers: จำนวนผู้ขับขี่ที่มีการอัปเดตล่าสุดภายใน 1 นาที
+// - active_drivers: จำนวนผู้ขับขี่ที่ออนไลน์ล่าสุดภายใน 5 นาที
 // - total_devices: จำนวน device id ทั้งหมดจาก devices
 // - alerts_today: การแจ้งเตือนระดับด่วนวันนี้ (drowsiness_level='high')
 func AdminOverview(c *gin.Context) {
@@ -386,24 +389,58 @@ SELECT
 	COALESCE((SELECT COUNT(*) FROM users WHERE role = 'driver'), 0) AS total_drivers,
 	COALESCE((
 		SELECT COUNT(DISTINCT d.user_id)
+		FROM devices d
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+		  AND (
+			d.last_update >= NOW() - INTERVAL '5 minutes'
+			OR EXISTS (
+				SELECT 1
+				FROM drowsiness_data dd
+				WHERE dd.device_id = d.id
+				  AND dd.timestamp >= NOW() - INTERVAL '5 minutes'
+			)
+		)
+	), 0) AS active_drivers,
+	COALESCE((
+		SELECT COUNT(DISTINCT LOWER(d.id))
+		FROM devices d
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+	), 0) AS total_devices,
+	COALESCE((
+		SELECT COUNT(*)
 		FROM drowsiness_data dd
 		JOIN devices d ON dd.device_id = d.id
 		JOIN users u ON d.user_id = u.id
 		WHERE u.role = 'driver'
 		  AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
-	), 0) AS active_drivers,
-	COALESCE((SELECT COUNT(*) FROM devices), 0) AS total_devices,
-	COALESCE((
-		SELECT COUNT(*)
-		FROM drowsiness_data dd
-		WHERE (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
+	), 0) + COALESCE((
+		SELECT COUNT(*)
+		FROM alerts a
+		JOIN devices d ON a.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+		  AND (a.timestamp + INTERVAL '7 hours')::date = $1::date
+		  AND LOWER(a.severity) IN ('high', 'critical', 'danger')
 	), 0) AS alerts_today,
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE (dd.timestamp + INTERVAL '7 hours')::date = $1::date
+		JOIN devices d ON dd.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+		  AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
+	), 0) + COALESCE((
+		SELECT COUNT(*)
+		FROM alerts a
+		JOIN devices d ON a.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+		  AND (a.timestamp + INTERVAL '7 hours')::date = $1::date
+		  AND LOWER(a.severity) IN ('high', 'critical', 'danger')
 	), 0) AS critical_alerts_today;
 `
 
@@ -426,7 +463,7 @@ SELECT
 
 // AdminDrivers returns a list of drivers with online status
 // and count of today's critical alerts, for use in the master dashboard driver table.
-// Online criteria: devices.last_update ภายใน 1 นาที
+// Online criteria: devices.last_update ภายใน 5 นาที
 func AdminDrivers(c *gin.Context) {
 	// Prevent caching so driver list reflects real-time status
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
@@ -444,8 +481,8 @@ SELECT
 	dev.last_update,
 	CASE
 		WHEN (
-			(act.last_ts IS NOT NULL AND act.last_ts >= NOW() - INTERVAL '1 minute')
-			OR (dev.last_update IS NOT NULL AND dev.last_update >= NOW() - INTERVAL '1 minute')
+			(act.last_ts IS NOT NULL AND act.last_ts >= NOW() - INTERVAL '5 minutes')
+			OR (dev.last_update IS NOT NULL AND dev.last_update >= NOW() - INTERVAL '5 minutes')
 		) THEN TRUE
 		ELSE FALSE
 	END AS is_online,
@@ -463,7 +500,6 @@ LEFT JOIN LATERAL (
 	SELECT MAX(dd.timestamp) AS last_ts
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 ) act ON TRUE
 LEFT JOIN LATERAL (
 	SELECT COUNT(*) AS critical_count
@@ -534,30 +570,57 @@ func AdminRecentAlerts(c *gin.Context) {
 	targetDate := getBangkokTargetDate(c)
 
 	query := `
-SELECT
-	dd.timestamp AS ts,
-	COALESCE(NULLIF(u.name, ''), u.email) AS driver_name,
-	CASE
-		WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'ความเหนื่อยล้าสูง'
-		WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'เหนื่อยล้าเล็กน้อย'
-		ELSE 'สถานะปกติ'
-	END AS alert_type,
-	CASE
-		WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'critical'
-		WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'warning'
-		ELSE 'info'
-	END AS severity,
-	d.id AS vehicle_id,
-	'real' AS source
-FROM drowsiness_data dd
-JOIN devices d ON dd.device_id = d.id
-JOIN users u ON d.user_id = u.id
-WHERE LOWER(dd.drowsiness_level) IN ('medium', 'high')
-	AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
-	AND u.role = 'driver'
-ORDER BY ts DESC
-LIMIT $2;
-`
+	SELECT ts, driver_name, alert_type, severity, vehicle_id, source
+	FROM (
+		SELECT
+			dd.timestamp AS ts,
+			COALESCE(NULLIF(u.name, ''), u.email) AS driver_name,
+			CASE
+				WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'ความเหนื่อยล้าสูง'
+				WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'เหนื่อยล้าเล็กน้อย'
+				ELSE 'สถานะปกติ'
+			END AS alert_type,
+			CASE
+				WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'critical'
+				WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'warning'
+				ELSE 'info'
+			END AS severity,
+			d.id AS vehicle_id,
+			'real' AS source
+		FROM drowsiness_data dd
+		JOIN devices d ON dd.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE LOWER(dd.drowsiness_level) IN ('medium', 'high')
+			AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
+			AND u.role = 'driver'
+
+		UNION ALL
+
+		SELECT
+			a.timestamp AS ts,
+			COALESCE(NULLIF(u.name, ''), u.email) AS driver_name,
+			CASE
+				WHEN COALESCE(NULLIF(a.alert_type, ''), '') <> '' THEN a.alert_type
+				WHEN LOWER(a.severity) IN ('critical', 'high', 'danger') THEN 'ความเสี่ยงสูง'
+				ELSE 'การแจ้งเตือน'
+			END AS alert_type,
+			CASE
+				WHEN LOWER(a.severity) IN ('critical', 'high', 'danger') THEN 'critical'
+				WHEN LOWER(a.severity) IN ('medium', 'warning') THEN 'warning'
+				ELSE 'info'
+			END AS severity,
+			d.id AS vehicle_id,
+			'device-alert' AS source
+		FROM alerts a
+		JOIN devices d ON a.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE (a.timestamp + INTERVAL '7 hours')::date = $1::date
+			AND u.role = 'driver'
+			AND LOWER(a.severity) IN ('critical', 'high', 'danger', 'medium', 'warning')
+	) merged
+	ORDER BY ts DESC
+	LIMIT $2;
+	`
 
 	rows, err := database.DB.Query(query, targetDate, limit)
 	if err != nil {
@@ -616,22 +679,38 @@ func AdminAlertSlots(c *gin.Context) {
 	query := `
 SELECT slot, COUNT(*) AS cnt
 FROM (
-    SELECT
-        CASE
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 6 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 8 THEN '06-08'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 8 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 10 THEN '08-10'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 10 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 12 THEN '10-12'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 12 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 14 THEN '12-14'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 14 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 16 THEN '14-16'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 16 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 18 THEN '16-18'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 18 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 20 THEN '18-20'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 20 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 22 THEN '20-22'
-            WHEN EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') >= 22 AND EXTRACT(HOUR FROM dd.timestamp + INTERVAL '7 hours') < 24 THEN '22-24'
-            ELSE NULL
-        END AS slot
-    FROM drowsiness_data dd
-	WHERE (dd.timestamp + INTERVAL '7 hours')::date = $1::date
-      AND LOWER(dd.drowsiness_level) = 'high'
+	SELECT
+		CASE
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 6 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 8 THEN '06-08'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 8 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 10 THEN '08-10'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 10 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 12 THEN '10-12'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 12 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 14 THEN '12-14'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 14 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 16 THEN '14-16'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 16 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 18 THEN '16-18'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 18 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 20 THEN '18-20'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 20 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 22 THEN '20-22'
+			WHEN EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') >= 22 AND EXTRACT(HOUR FROM src.ts + INTERVAL '7 hours') < 24 THEN '22-24'
+			ELSE NULL
+		END AS slot
+	FROM (
+		SELECT dd.timestamp AS ts
+		FROM drowsiness_data dd
+		JOIN devices d ON dd.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+			AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
+			AND LOWER(dd.drowsiness_level) = 'high'
+
+		UNION ALL
+
+		SELECT a.timestamp AS ts
+		FROM alerts a
+		JOIN devices d ON a.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+			AND (a.timestamp + INTERVAL '7 hours')::date = $1::date
+			AND LOWER(a.severity) IN ('critical', 'high', 'danger')
+	) src
 ) sub
 WHERE slot IS NOT NULL
 GROUP BY slot;
@@ -700,13 +779,36 @@ func AdminAlertLevels(c *gin.Context) {
 	// Using Thailand timezone (UTC+7) - add 7 hours to convert from UTC to Bangkok time
 	query := `
 SELECT
-	COUNT(*) FILTER (WHERE LOWER(dd.drowsiness_level) = 'high') AS high_total,
-	COUNT(*) FILTER (WHERE LOWER(dd.drowsiness_level) = 'medium') AS medium_total
-FROM drowsiness_data dd
-JOIN devices d ON dd.device_id = d.id
-JOIN users u ON d.user_id = u.id
-WHERE u.role = 'driver'
-  AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
+	COUNT(*) FILTER (WHERE merged.severity = 'high') AS high_total,
+	COUNT(*) FILTER (WHERE merged.severity = 'medium') AS medium_total
+FROM (
+	SELECT
+		CASE
+			WHEN LOWER(dd.drowsiness_level) = 'high' THEN 'high'
+			WHEN LOWER(dd.drowsiness_level) = 'medium' THEN 'medium'
+			ELSE NULL
+		END AS severity
+	FROM drowsiness_data dd
+	JOIN devices d ON dd.device_id = d.id
+	JOIN users u ON d.user_id = u.id
+	WHERE u.role = 'driver'
+	  AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
+
+	UNION ALL
+
+	SELECT
+		CASE
+			WHEN LOWER(a.severity) IN ('critical', 'high', 'danger') THEN 'high'
+			WHEN LOWER(a.severity) IN ('medium', 'warning') THEN 'medium'
+			ELSE NULL
+		END AS severity
+	FROM alerts a
+	JOIN devices d ON a.device_id = d.id
+	JOIN users u ON d.user_id = u.id
+	WHERE u.role = 'driver'
+	  AND (a.timestamp + INTERVAL '7 hours')::date = $1::date
+) merged
+WHERE merged.severity IS NOT NULL
 `
 
 	var highCount, mediumCount int

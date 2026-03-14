@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "./AuthContext";
-import { ArrowLeft, Eye, AlertTriangle, Activity, Settings, Bell, Shield, Car, Moon, Sun } from "lucide-react";
+import { ArrowLeft, Eye, AlertTriangle, Activity, Settings, Bell, Shield, Car, Moon, Sun, CalendarDays } from "lucide-react";
 import { getLastKnownDeviceId } from "../utils/auth";
 
 interface DriverDashboardProps {
@@ -17,6 +17,11 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   const [displayEvents, setDisplayEvents] = useState<Array<{ time: string; label: string; severity: string; hour: number }>>([]);
   const [lastCriticalAt, setLastCriticalAt] = useState<number | null>(null);
   const [alertDisplayLimit, setAlertDisplayLimit] = useState<number>(10);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     const stored = window.localStorage.getItem("theme");
@@ -30,6 +35,17 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
     const lastEvent = allEvents[0]?.time || "-";
     return { eventsToday, lastEvent };
   }, [allEvents]);
+
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDate) return "-";
+    const parsed = new Date(`${selectedDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return selectedDate;
+    return parsed.toLocaleDateString("th-TH", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }, [selectedDate]);
 
   // แสดงเวลาแบบ Thailand Time (GMT+7)
   const formatTime = useCallback((iso: string) => {
@@ -65,7 +81,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
         : 'https://driver-drowsiness-api.onrender.com/api');
     try {
       const rawLimit = 300; // เพียงพอต่อวัน
-      const res = await fetch(`${API_BASE}/devices/${deviceId}/history?limit=${rawLimit}`, {
+      const res = await fetch(`${API_BASE}/devices/${deviceId}/history?limit=${rawLimit}&date=${encodeURIComponent(selectedDate)}`, {
         cache: "no-store",
       });
       if (!res.ok) return;
@@ -102,7 +118,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
         }
       }
     } catch {}
-  }, [deviceId, formatTime, lastCriticalAt, alertDisplayLimit]);
+  }, [deviceId, formatTime, lastCriticalAt, alertDisplayLimit, selectedDate]);
 
   // Initial fetch
   useEffect(() => {
@@ -174,6 +190,24 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-800">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">ตัวกรองข้อมูลย้อนหลัง</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300">กำลังแสดงข้อมูลของวันที่ {selectedDateLabel}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-slate-500" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100"
+              />
+            </div>
+          </div>
+        </div>
+
         {!deviceId && (
           <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-800">
             <div className="font-medium">ยังไม่พบ Device ID ของบัญชีนี้</div>
@@ -239,7 +273,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
           })()}
           <div className="rounded-xl border bg-gradient-to-br from-orange-50 to-yellow-50 dark:from-orange-950 dark:to-yellow-950 border-orange-200 dark:border-orange-800 shadow p-4 sm:p-6 flex flex-col justify-center">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm text-orange-700 dark:text-orange-300">เหตุการณ์สถานะวันนี้</h3>
+              <h3 className="font-semibold text-sm text-orange-700 dark:text-orange-300">เหตุการณ์สถานะของวันที่เลือก</h3>
               <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-300" />
             </div>
             <div className="text-3xl font-bold text-orange-900 dark:text-orange-300 mb-1">{driverStats.eventsToday}</div>
@@ -253,7 +287,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
             <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800 rounded-t-xl">
               <div className="flex items-center space-x-2">
                 <Bell className="w-5 h-5 text-blue-600 dark:text-blue-300" />
-                <h3 className="font-semibold">เหตุการณ์สถานะวันนี้</h3>
+                <h3 className="font-semibold">เหตุการณ์สถานะของวันที่เลือก</h3>
               </div>
               <p className="text-sm text-slate-500 dark:text-slate-400">สตรีมสถานะ (Normal แสดงครั้งเดียวต่อช่วง / ระวัง & อันตราย แสดงทุกครั้ง)</p>
             </div>
@@ -289,7 +323,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
               {displayEvents.length === 0 && (
                 <div className="text-center py-8 text-slate-500 dark:text-slate-400">
                   <Bell className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-                  <p>ยังไม่มีข้อมูลสถานะในวันนี้</p>
+                  <p>ยังไม่มีข้อมูลสถานะของวันที่เลือก</p>
                 </div>
               )}
             </div>
@@ -299,7 +333,7 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
             <div className="p-6 border-b">
               <div className="flex items-center space-x-2">
                 <Activity className="w-5 h-5" />
-                <h3 className="font-semibold">ประวัติการแจ้งเตือนวันนี้</h3>
+                <h3 className="font-semibold">ประวัติการแจ้งเตือนของวันที่เลือก</h3>
               </div>
               <p className="text-sm text-slate-500 dark:text-slate-400">แนวโน้มการแจ้งเตือน (06:00-24:00)</p>
             </div>
