@@ -30,14 +30,6 @@ func main() {
 		log.Fatalf("❌ Failed to run migrations: %v", err)
 	}
 
-	// Initial purge of previous days' data (retain only today)
-	if err := database.PurgeNonTodayData(); err != nil {
-		log.Printf("⚠️ Initial purge encountered an error: %v", err)
-	}
-
-	// Schedule daily purge at midnight UTC
-	database.ScheduleDailyPurge()
-
 	// Setup Gin router
 	router := setupRouter()
 

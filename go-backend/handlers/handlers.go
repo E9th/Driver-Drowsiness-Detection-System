@@ -51,6 +51,39 @@ func DevToolsManifest(c *gin.Context) {
 	})
 }
 
+func getBangkokTargetDate(c *gin.Context) string {
+	loc := time.FixedZone("UTC+7", 7*60*60)
+	dateParam := strings.TrimSpace(c.Query("date"))
+	if dateParam == "" {
+		return time.Now().In(loc).Format("2006-01-02")
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", dateParam, loc)
+	if err != nil {
+		return time.Now().In(loc).Format("2006-01-02")
+	}
+	return parsed.Format("2006-01-02")
+}
+
+func canonicalDeviceID(rawID string) string {
+	trimmedID := strings.TrimSpace(rawID)
+	if trimmedID == "" {
+		return ""
+	}
+
+	var existingID string
+	err := database.DB.QueryRow(`
+		SELECT id
+		FROM devices
+		WHERE LOWER(id) = LOWER($1)
+		LIMIT 1
+	`, trimmedID).Scan(&existingID)
+	if err == nil {
+		return existingID
+	}
+
+	return strings.ToLower(trimmedID)
+}
+
 // ensureDeviceExists creates a device if it doesn't exist (auto-registration)
 func ensureDeviceExists(deviceID string, driverEmail string) error {
 	// Use UPSERT (INSERT ... ON CONFLICT DO NOTHING)
@@ -64,7 +97,7 @@ func ensureDeviceExists(deviceID string, driverEmail string) error {
 
 // ReceiveDeviceData receives drowsiness data from Python hardware
 func ReceiveDeviceData(c *gin.Context) {
-	deviceID := c.Param("id")
+	deviceID := canonicalDeviceID(c.Param("id"))
 
 	var payload models.DataPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -123,7 +156,7 @@ func ReceiveDeviceData(c *gin.Context) {
 
 // ReceiveAlert receives alert from Python hardware
 func ReceiveAlert(c *gin.Context) {
-	deviceID := c.Param("id")
+	deviceID := canonicalDeviceID(c.Param("id"))
 
 	var payload models.AlertPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -169,7 +202,7 @@ func ReceiveAlert(c *gin.Context) {
 
 // GetDeviceLatestData returns the latest drowsiness data for a device
 func GetDeviceLatestData(c *gin.Context) {
-	deviceID := c.Param("id")
+	deviceID := canonicalDeviceID(c.Param("id"))
 
 	// Prevent client/proxy caching so latest data is always fetched
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
@@ -204,7 +237,7 @@ func GetDeviceLatestData(c *gin.Context) {
 
 // GetDeviceHistory returns historical data for a device
 func GetDeviceHistory(c *gin.Context) {
-	deviceID := c.Param("id")
+	deviceID := canonicalDeviceID(c.Param("id"))
 	limit := c.DefaultQuery("limit", "100")
 
 	// Prevent caching
@@ -250,7 +283,7 @@ func GetDeviceHistory(c *gin.Context) {
 
 // GetDeviceAlerts returns alerts for a device
 func GetDeviceAlerts(c *gin.Context) {
-	deviceID := c.Param("id")
+	deviceID := canonicalDeviceID(c.Param("id"))
 	limit := c.DefaultQuery("limit", "50")
 
 	// Prevent caching
@@ -344,6 +377,7 @@ func AdminOverview(c *gin.Context) {
 	var totalDevices int
 	var alertsToday int
 	var criticalAlertsToday int
+	targetDate := getBangkokTargetDate(c)
 
 	// Simplified query without mock tables - using Thailand timezone (UTC+7)
 	// Note: timestamp column stores UTC time, so we add 7 hours to convert to Bangkok time
@@ -352,26 +386,28 @@ SELECT
 	COALESCE((SELECT COUNT(*) FROM users WHERE role = 'driver'), 0) AS total_drivers,
 	COALESCE((
 		SELECT COUNT(DISTINCT d.user_id)
-		FROM devices d
-		WHERE d.last_update >= NOW() - INTERVAL '1 minute'
-		  AND d.user_id IS NOT NULL
+		FROM drowsiness_data dd
+		JOIN devices d ON dd.device_id = d.id
+		JOIN users u ON d.user_id = u.id
+		WHERE u.role = 'driver'
+		  AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 	), 0) AS active_drivers,
 	COALESCE((SELECT COUNT(*) FROM devices), 0) AS total_devices,
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+		WHERE (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
 	), 0) AS alerts_today,
 	COALESCE((
 		SELECT COUNT(*)
 		FROM drowsiness_data dd
-		WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+		WHERE (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 		  AND LOWER(dd.drowsiness_level) = 'high'
 	), 0) AS critical_alerts_today;
 `
 
-	if err := database.DB.QueryRow(query).Scan(&totalDrivers, &activeDrivers, &totalDevices, &alertsToday, &criticalAlertsToday); err != nil {
+	if err := database.DB.QueryRow(query, targetDate).Scan(&totalDrivers, &activeDrivers, &totalDevices, &alertsToday, &criticalAlertsToday); err != nil {
 		log.Printf("❌ Error fetching admin overview stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch overview stats"})
 		return
@@ -383,6 +419,7 @@ SELECT
 		"total_devices":         totalDevices,
 		"alerts_today":          alertsToday,
 		"critical_alerts_today": criticalAlertsToday,
+		"date":                  targetDate,
 		"generated_at":          time.Now().Format(time.RFC3339),
 	})
 }
@@ -395,6 +432,8 @@ func AdminDrivers(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
+
+	targetDate := getBangkokTargetDate(c)
 
 	const driversQuery = `
 SELECT
@@ -424,13 +463,13 @@ LEFT JOIN LATERAL (
 	SELECT MAX(dd.timestamp) AS last_ts
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+		AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 ) act ON TRUE
 LEFT JOIN LATERAL (
 	SELECT COUNT(*) AS critical_count
 	FROM drowsiness_data dd
 	WHERE dd.device_id = dev.device_id
-		AND (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+		AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 		AND LOWER(dd.drowsiness_level) = 'high'
 ) ac ON TRUE
 WHERE u.role = 'driver';`
@@ -438,7 +477,7 @@ WHERE u.role = 'driver';`
 	var results []models.AdminDriverSummary
 
 	// Query drivers
-	rows, err := database.DB.Query(driversQuery)
+	rows, err := database.DB.Query(driversQuery, targetDate)
 	if err != nil {
 		log.Printf("error querying drivers: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query drivers"})
@@ -475,7 +514,7 @@ WHERE u.role = 'driver';`
 		log.Printf("error after iterating driver rows: %v", err)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"drivers": results})
+	c.JSON(http.StatusOK, gin.H{"date": targetDate, "drivers": results})
 }
 
 // AdminRecentAlerts returns a unified list of recent medium/high drowsiness events
@@ -492,6 +531,7 @@ func AdminRecentAlerts(c *gin.Context) {
 	if err != nil || limit <= 0 {
 		limit = 20
 	}
+	targetDate := getBangkokTargetDate(c)
 
 	query := `
 SELECT
@@ -513,12 +553,13 @@ FROM drowsiness_data dd
 JOIN devices d ON dd.device_id = d.id
 JOIN users u ON d.user_id = u.id
 WHERE LOWER(dd.drowsiness_level) IN ('medium', 'high')
+	AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 	AND u.role = 'driver'
 ORDER BY ts DESC
-LIMIT $1;
+LIMIT $2;
 `
 
-	rows, err := database.DB.Query(query, limit)
+	rows, err := database.DB.Query(query, targetDate, limit)
 	if err != nil {
 		log.Printf("error querying recent alerts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch recent alerts"})
@@ -555,7 +596,7 @@ LIMIT $1;
 		log.Printf("error after iterating recent alert rows: %v", err)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"alerts": results})
+	c.JSON(http.StatusOK, gin.H{"date": targetDate, "alerts": results})
 }
 
 // AdminAlertSlots returns aggregated high-level alerts per time slot
@@ -565,6 +606,8 @@ func AdminAlertSlots(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
+	targetDate := getBangkokTargetDate(c)
+
 	// Predefine all slots to ensure zero-count slots are included
 	slotLabels := []string{"06-08", "08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22", "22-24"}
 
@@ -587,14 +630,14 @@ FROM (
             ELSE NULL
         END AS slot
     FROM drowsiness_data dd
-    WHERE (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+	WHERE (dd.timestamp + INTERVAL '7 hours')::date = $1::date
       AND LOWER(dd.drowsiness_level) = 'high'
 ) sub
 WHERE slot IS NOT NULL
 GROUP BY slot;
 `
 
-	rows, err := database.DB.Query(query)
+	rows, err := database.DB.Query(query, targetDate)
 	if err != nil {
 		log.Printf("error querying alert slots: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch alert slots"})
@@ -637,6 +680,7 @@ GROUP BY slot;
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"date":       targetDate,
 		"slots":      slots,
 		"total_high": totalHigh,
 		"peak_slot":  peakLbl,
@@ -651,6 +695,8 @@ func AdminAlertLevels(c *gin.Context) {
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
+	targetDate := getBangkokTargetDate(c)
+
 	// Using Thailand timezone (UTC+7) - add 7 hours to convert from UTC to Bangkok time
 	query := `
 SELECT
@@ -660,11 +706,11 @@ FROM drowsiness_data dd
 JOIN devices d ON dd.device_id = d.id
 JOIN users u ON d.user_id = u.id
 WHERE u.role = 'driver'
-  AND (dd.timestamp + INTERVAL '7 hours')::date = (NOW() + INTERVAL '7 hours')::date
+  AND (dd.timestamp + INTERVAL '7 hours')::date = $1::date
 `
 
 	var highCount, mediumCount int
-	if err := database.DB.QueryRow(query).Scan(&highCount, &mediumCount); err != nil {
+	if err := database.DB.QueryRow(query, targetDate).Scan(&highCount, &mediumCount); err != nil {
 		log.Printf("error querying alert levels: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch alert levels"})
 		return
@@ -689,6 +735,7 @@ WHERE u.role = 'driver'
 		HighPct:     highPct,
 		MediumPct:   mediumPct,
 		SafePct:     safePct,
+		Date:        targetDate,
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -703,6 +750,9 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+
+	req.DeviceID = strings.ToLower(strings.TrimSpace(req.DeviceID))
+	req.UserType = "individual-driver"
 
 	// Check existing user
 	if _, err := database.GetUserByEmail(req.Email); err == nil {

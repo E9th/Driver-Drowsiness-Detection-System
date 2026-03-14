@@ -4,8 +4,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Eye, EyeOff, ArrowLeft, Building, Users, Car } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft, Car } from "lucide-react";
 
 interface SignupPageProps {
   onBack: () => void;
@@ -25,7 +24,7 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
     password: "",
     confirmPassword: "",
     company: "",
-    userType: "",
+    userType: "individual-driver",
     phone: "",
     deviceId: ""
   });
@@ -167,31 +166,10 @@ export function SignupPage({ onBack, onSwitchToLogin, onDriverDashboard, onMaste
 
               <div className="space-y-2">
                 <Label htmlFor="userType">ประเภทผู้ใช้งาน</Label>
-                <Select value={formData.userType} onValueChange={(value) => handleInputChange("userType", value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกประเภทผู้ใช้งาน" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fleet-manager">
-                      <div className="flex items-center space-x-2">
-                        <Building className="w-4 h-4" />
-                        <span>ผู้จัดการกลุ่มรถ</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="transport-company">
-                      <div className="flex items-center space-x-2">
-                        <Users className="w-4 h-4" />
-                        <span>บริษัทขนส่ง</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="individual-driver">
-                      <div className="flex items-center space-x-2">
-                        <Car className="w-4 h-4" />
-                        <span>ผู้ขับขี่รายบุคคล</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="h-10 rounded-md border border-slate-200 bg-slate-50 px-3 flex items-center gap-2 text-sm text-slate-700">
+                  <Car className="w-4 h-4" />
+                  <span>ผู้ขับขี่รายบุคคล</span>
+                </div>
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">

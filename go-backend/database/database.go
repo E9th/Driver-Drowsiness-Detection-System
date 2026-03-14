@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"log"
+	"strings"
 	"time"
 
 	"driver-drowsiness-backend/config"
@@ -320,10 +321,24 @@ func ScheduleDailyPurge() {
 // UpsertDeviceForUser links a device to a user (by email and user ID).
 // If the device already exists, its driver_email and user_id are updated.
 func UpsertDeviceForUser(deviceID, email string, userID int) error {
+	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {
 		return nil
 	}
-	_, err := DB.Exec(`
+
+	var canonicalID string
+	err := DB.QueryRow(`
+		SELECT id
+		FROM devices
+		WHERE LOWER(id) = LOWER($1)
+		LIMIT 1
+	`, deviceID).Scan(&canonicalID)
+	if err == nil {
+		deviceID = canonicalID
+	} else {
+		deviceID = strings.ToLower(deviceID)
+	}
+	_, err = DB.Exec(`
 		INSERT INTO devices (id, driver_email, user_id, status)
 		VALUES ($1, $2, $3, 'active')
 		ON CONFLICT (id) DO UPDATE SET

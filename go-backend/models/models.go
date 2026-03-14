@@ -86,6 +86,7 @@ type AdminAlertLevelSummary struct {
 	HighPct     float64 `json:"high_pct"`
 	MediumPct   float64 `json:"medium_pct"`
 	SafePct     float64 `json:"safe_pct"`
+	Date        string  `json:"date,omitempty"`
 }
 
 // User represents an application user (for authentication)

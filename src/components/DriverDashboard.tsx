@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "./AuthContext";
 import { ArrowLeft, Eye, AlertTriangle, Activity, Settings, Bell, Shield, Car, Moon, Sun } from "lucide-react";
+import { getLastKnownDeviceId } from "../utils/auth";
 
 interface DriverDashboardProps {
   onBack: () => void;
@@ -9,7 +10,7 @@ interface DriverDashboardProps {
 
 export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   const { user, logoutUser } = useAuth();
-  const deviceId = user?.device_id || "device_01";
+  const deviceId = (user?.device_id || getLastKnownDeviceId()).trim().toLowerCase();
   const [drivingStatus, setDrivingStatus] = useState("พร้อมขับขี่");
   const [latestStatus, setLatestStatus] = useState<{ drowsiness_level?: string; status?: string } | null>(null);
   const [allEvents, setAllEvents] = useState<Array<{ time: string; label: string; severity: string; hour: number }>>([]); // warning/danger only
@@ -50,6 +51,14 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
   // - กำหนด latestStatus จากแถวแรก (รวม normal ได้)
   // - สร้าง events เฉพาะ medium/high ทุก occurrence (ไม่รวม normal)
   const fetchStatusHistory = useCallback(async () => {
+    if (!deviceId) {
+      setLatestStatus(null);
+      setDrivingStatus("พร้อมขับขี่");
+      setAllEvents([]);
+      setDisplayEvents([]);
+      return;
+    }
+
     const API_BASE = import.meta?.env?.VITE_API_BASE || 
       (window.location.hostname === 'localhost' 
         ? 'http://localhost:8080/api' 
@@ -115,10 +124,11 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
 
   // Adaptive polling unified (history only)
   useEffect(() => {
+    if (!deviceId) return;
     const intervalMs = 1000; // poll every 1s
     const t = setInterval(fetchStatusHistory, intervalMs);
     return () => clearInterval(t);
-  }, [fetchStatusHistory]);
+  }, [deviceId, fetchStatusHistory]);
 
   const handleLogout = () => { logoutUser(); onBack(); };
 
@@ -164,6 +174,13 @@ export function DriverDashboard({ onBack, onProfile }: DriverDashboardProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {!deviceId && (
+          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-800">
+            <div className="font-medium">ยังไม่พบ Device ID ของบัญชีนี้</div>
+            <div className="text-sm">กรุณาตรวจสอบว่าใส่ Device ID ตอนสมัครให้ตรงกับอุปกรณ์ และล็อกอินใหม่อีกครั้ง</div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
           {(() => {
             const levelKey = (latestStatus?.drowsiness_level || "low").toLowerCase();

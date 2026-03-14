@@ -15,7 +15,15 @@ from queue import Queue, Empty
 # ใช้ environment variable หรือ default เป็น Render production URL
 # สำหรับ local development: set BACKEND_URL=http://localhost:8080
 BACKEND_URL = os.getenv("BACKEND_URL", "https://driver-drowsiness-api.onrender.com")
-DEVICE_ID = os.getenv("DEVICE_ID", "device_01")  # Unique device identifier
+
+
+def _normalize_device_id(device_id: str) -> str:
+    """Normalize device id so mixed-case values map to the same backend path."""
+    normalized = (device_id or "").strip().lower()
+    return normalized or "device_01"
+
+
+DEVICE_ID = _normalize_device_id(os.getenv("DEVICE_ID", "device_01"))  # Unique device identifier
 
 # Connection status
 backend_connected = False

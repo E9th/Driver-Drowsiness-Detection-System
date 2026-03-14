@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "./AuthContext";
+import { getLastKnownDeviceId } from "../utils/auth";
 
 interface ProfilePageProps {
   onBack: () => void;
@@ -29,7 +30,7 @@ const getUserTypeLabel = (userType?: string) => {
 
 export function ProfilePage({ onBack }: ProfilePageProps) {
   const { user } = useAuth();
-  const deviceId = user?.device_id || "device_01";
+  const deviceId = (user?.device_id || getLastKnownDeviceId()).trim().toLowerCase();
 
   const [isEditing] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -48,7 +49,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
       email: user.email,
       phone: user.phone || prev.phone,
       userType: getUserTypeLabel(user.user_type),
-      vehicleId: user.device_id || prev.vehicleId
+      vehicleId: (user.device_id || getLastKnownDeviceId() || prev.vehicleId || "-").trim().toLowerCase()
     }));
   }, [user, isEditing]);
 

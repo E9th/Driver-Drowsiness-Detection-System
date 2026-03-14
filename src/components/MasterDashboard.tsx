@@ -22,6 +22,7 @@ import {
   // MapPin,
   Clock,
   BarChart3,
+  CalendarDays,
   // Eye,
   // Download,
   // Save,
@@ -36,6 +37,22 @@ interface MasterDashboardProps {
 }
 
 export function MasterDashboard({ onBack }: MasterDashboardProps) {
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
+
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDate) return "-";
+    const parsed = new Date(`${selectedDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return selectedDate;
+    return parsed.toLocaleDateString("th-TH", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }, [selectedDate]);
 
   const [driverOverview, setDriverOverview] = useState<{
     totalDrivers: number;
@@ -89,10 +106,12 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
         ? 'http://localhost:8080/api' 
         : 'https://driver-drowsiness-api.onrender.com/api');
 
+    const dateQuery = `date=${encodeURIComponent(selectedDate)}`;
+
     async function fetchOverview() {
       try {
         const token = getToken();
-        const res = await fetch(`${API_BASE}/admin/overview`, {
+        const res = await fetch(`${API_BASE}/admin/overview?${dateQuery}`, {
           cache: "no-store",
           headers: {
             "Content-Type": "application/json",
@@ -117,7 +136,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     async function fetchDrivers() {
       try {
         const token = getToken();
-        const res = await fetch(`${API_BASE}/admin/drivers`, {
+        const res = await fetch(`${API_BASE}/admin/drivers?${dateQuery}`, {
           cache: "no-store",
           headers: {
             "Content-Type": "application/json",
@@ -135,7 +154,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     async function fetchRecentAlerts() {
       try {
         const token = getToken();
-        const res = await fetch(`${API_BASE}/admin/recent-alerts?limit=20`, {
+        const res = await fetch(`${API_BASE}/admin/recent-alerts?limit=20&${dateQuery}`, {
           cache: "no-store",
           headers: {
             "Content-Type": "application/json",
@@ -163,7 +182,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     async function fetchAlertSlots() {
       try {
         const token = getToken();
-        const res = await fetch(`${API_BASE}/admin/alert-slots`, {
+        const res = await fetch(`${API_BASE}/admin/alert-slots?${dateQuery}`, {
           cache: "no-store",
           headers: {
             "Content-Type": "application/json",
@@ -190,7 +209,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
     async function fetchAlertLevels() {
       try {
         const token = getToken();
-        const res = await fetch(`${API_BASE}/admin/alert-levels`, {
+        const res = await fetch(`${API_BASE}/admin/alert-levels?${dateQuery}`, {
           cache: "no-store",
           headers: {
             "Content-Type": "application/json",
@@ -229,7 +248,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       clearInterval(slotsId);
       clearInterval(levelsId);
     };
-  }, []);
+  }, [selectedDate]);
 
   type AdminDriverRow = {
     id: string;
@@ -319,6 +338,26 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card className="mb-4 lg:mb-6">
+          <CardContent className="pt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">ตัวกรองข้อมูลย้อนหลัง</h2>
+                <p className="text-sm text-slate-600">กำลังแสดงข้อมูลของวันที่ {selectedDateLabel}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-slate-500" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Critical Alerts Banner removed as requested */}
 
         {/* Stats Overview (removed hoursToday & safetyScore) */}
@@ -359,6 +398,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
             </CardHeader>
             <CardContent>
 	              <div className="text-2xl font-bold text-orange-600">{driverOverview.alertsToday}</div>
+                <div className="text-sm text-slate-500">วันที่ {selectedDateLabel}</div>
             </CardContent>
           </Card>
         </div>
@@ -524,10 +564,10 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
                     <BarChart3 className="w-5 h-5" />
-                    <span>การแจ้งเตือนตามช่วงเวลาวันนี้</span>
+                    <span>การแจ้งเตือนตามช่วงเวลา</span>
                   </CardTitle>
                   <CardDescription>
-                    จำนวนการแจ้งเตือนแต่ละช่วงเวลา (06:00-24:00)
+                    จำนวนการแจ้งเตือนแต่ละช่วงเวลา (06:00-24:00) ของวันที่ {selectedDateLabel}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -643,13 +683,13 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
               </Card>
             </div>
 
-            {/* Performance Metrics - ปรับให้แสดงข้อมูลวันนี้ */}
+            {/* Performance Metrics - ปรับให้แสดงข้อมูลตามวันที่เลือก */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 lg:gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
                     <Clock className="w-5 h-5 text-blue-500" />
-                    <span>ช่วงเวลาเสี่ยงวันนี้</span>
+                    <span>ช่วงเวลาเสี่ยงของวันที่เลือก</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -671,7 +711,7 @@ export function MasterDashboard({ onBack }: MasterDashboardProps) {
                   </div>
                   <div className="pt-2 border-t">
                     <p className="text-xs text-slate-500">
-                      * ข้อมูลการแจ้งเตือนวันนี้ (ล้างข้อมูลทุก 00:00 น.)
+	                      * ข้อมูลถูกเก็บต่อเนื่อง และสามารถเลือกวันที่เพื่อดูย้อนหลังได้
                     </p>
                   </div>
                 </CardContent>
