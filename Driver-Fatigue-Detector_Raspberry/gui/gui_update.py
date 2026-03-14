@@ -32,9 +32,9 @@ camera_available = False
 #-- Detection: 10 FPS for stable Pi performance and accurate consecutive-frame counting
 DETECTION_INTERVAL_MS = 100
 FIREBASE_SEND_INTERVAL = 30
-CRITICAL_DEBOUNCE_SECONDS = 10
+CRITICAL_DEBOUNCE_SECONDS = 10 
 YAWN_DEBOUNCE_SECONDS = 3
-CRITICAL_FRAMES_THRESHOLD = 50  # ~5 sec at 10 FPS → CRITICAL
+CRITICAL_FRAMES_THRESHOLD = 30  # ~3 sec at 10 FPS → CRITICAL 
 
 drowsy_active = False
 eye_blink_count = 0
