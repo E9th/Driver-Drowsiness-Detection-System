@@ -1,0 +1,295 @@
+import tkinter as tk
+from tkinter import Frame, Label, ttk, Listbox, Scrollbar
+
+# -- Import GUI update functions
+from gui.gui_update import (
+    start_video, stop_video, reset_values,
+    exit_program, change_camera_source, on_closing,
+    update_frame, set_gui_refs
+)
+
+# Theme settings
+primary_color = "#2196F3"
+secondary_color = "#37474F"
+accent_color = "#FFC107"
+success_color = "#4CAF50"
+danger_color = "#F44336"
+warning_color = "#FF9800"
+text_color = "#FFFFFF"
+bg_color = "#1E1E1E"
+card_bg = "#2D2D2D"
+
+title_font = ("Segoe UI", 18, "bold")
+header_font = ("Segoe UI", 12, "bold")
+body_font = ("Segoe UI", 10)
+
+#-- Global variables for GUI components
+root = None
+video_label = None
+start_button = None
+stop_button = None
+status_value_label = None
+progress_bar = None
+blink_value_label = None
+yawn_count_value_label = None
+doze_value_label = None
+ear_value_label = None
+yawn_value_label = None
+event_log_listbox = None
+
+#-- Import necessary modules for video processing
+from imutils.video import VideoStream
+import time
+import cv2
+import core.backend_api as backend_api
+
+__all__ = ["FatigueDetectionGUI", "start_gui"]
+
+shared_detector = None  # new global reference to detector injected from main
+vs = None
+camera_available = False
+
+class FatigueDetectionGUI:
+    """
+    Wrapper class to integrate GUI with main system.
+    """
+    def __init__(self, detector):
+        global shared_detector
+        shared_detector = detector  # keep reference
+        self.detector = detector
+
+    def run(self):
+        start_gui()
+
+    def cleanup(self):
+        try:
+            on_closing()
+        except Exception as e:
+            print(f"[GUI] Cleanup error: {e}")
+
+def _update_device_info(container: tk.Frame, text_color: str, card_bg: str,
+                        primary_color: str, success_color: str, danger_color: str) -> None:
+    """Populate device info and live backend connection status."""
+    try:
+        Label(container, text="Device: device_01", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        Label(container, text="Backend: http://localhost:8080", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        Label(container, text="Database: PostgreSQL", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        Label(container, text="Camera: Auto", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+        # Simple status badges
+        status_row = Frame(container, bg=card_bg)
+        status_row.pack(fill="x", pady=(4,0))
+        status_label = Label(status_row, text="CHECKING...", font=("Segoe UI", 8, "bold"), fg=warning_color, bg=card_bg)
+        status_label.pack(side="left")
+        Label(status_row, text="SECURE", font=("Segoe UI", 8, "bold"), fg=primary_color, bg=card_bg).pack(side="left", padx=8)
+
+        def _refresh_backend_status():
+            try:
+                # Health check; updates backend_api.backend_connected internally
+                backend_api.initialize_backend()
+                if backend_api.backend_connected:
+                    status_label.config(text="ONLINE", fg=success_color)
+                else:
+                    status_label.config(text="OFFLINE", fg=danger_color)
+            except Exception as e:
+                print(f"[GUI] Backend status check error: {e}")
+                status_label.config(text="OFFLINE", fg=danger_color)
+            finally:
+                # Re-check every 10 seconds
+                container.after(10000, _refresh_backend_status)
+
+        _refresh_backend_status()
+    except Exception as e:
+        print(f"[GUI] Device info init error: {e}")
+
+def _probe_camera_indices(max_index: int = 3):
+    """Try opening camera indices sequentially if no detector capture exists."""
+    for idx in range(0, max_index + 1):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            ret, frm = cap.read()
+            if ret and frm is not None:
+                cap.release()
+                return idx
+        cap.release()
+    return None
+
+# -- Function to start the GUI application
+def start_gui() -> None:
+    global root, video_label, start_button, stop_button
+    global status_value_label, progress_bar
+    global blink_value_label, yawn_count_value_label, doze_value_label
+    global ear_value_label, yawn_value_label, event_log_listbox
+    global vs, camera_available
+
+    # Firebase initialization removed
+
+    # Camera strategy:
+    # 1. If shared_detector and its cap valid -> reuse (no second open)
+    # 2. Else probe indices and start VideoStream
+    if shared_detector and getattr(shared_detector, "cap", None) and shared_detector.cap.isOpened():
+        camera_available = True
+        print("[Camera] Reusing detector camera (no duplicate open)")
+    else:
+        try:
+            idx = _probe_camera_indices()
+            if idx is not None:
+                vs = VideoStream(src=idx).start()
+                time.sleep(2.0)
+                test_frame = vs.read()
+                camera_available = test_frame is not None
+                print(f"[Camera] Auto-init source {idx} -> {'OK' if camera_available else 'FAILED'}")
+            else:
+                camera_available = False
+                print("[Camera] No usable camera index found (0..3)")
+        except Exception as e:
+            print(f"[Camera] ERROR auto-init: {e}")
+            camera_available = False
+
+    root = tk.Tk()
+    root.title("Driver Fatigue Detection System v2.0 - Professional Edition")
+    root.attributes("-fullscreen", True)
+    root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))  # กด ESC เพื่อออก
+    root.configure(bg=bg_color)
+    root.resizable(True, True)
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+
+    # Menu
+    menu = tk.Menu(root, bg=secondary_color, fg=text_color)
+    root.config(menu=menu)
+    settings_menu = tk.Menu(menu, tearoff=0, bg=secondary_color, fg=text_color)
+    menu.add_cascade(label="Settings", menu=settings_menu)
+
+    camera_menu = tk.Menu(settings_menu, tearoff=0, bg=secondary_color, fg=text_color)
+    settings_menu.add_cascade(label="Camera Source", menu=camera_menu)
+    camera_menu.add_command(label="Internal Camera (0)", command=lambda: change_camera_source(0))
+    camera_menu.add_command(label="External Camera (1)", command=lambda: change_camera_source(1))
+
+    # Header
+    header_frame = Frame(root, bg=primary_color, height=60)
+    header_frame.pack(fill="x")
+    header_frame.pack_propagate(False)
+    Label(header_frame, text="DRIVER FATIGUE DETECTION SYSTEM v2.0", 
+          font=title_font, fg=text_color, bg=primary_color).pack(expand=True)
+
+    # Main container
+    main_container = Frame(root, bg=bg_color)
+    main_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+    # Left - Event Log (timestamp + status)
+    left_frame = Frame(main_container, bg=card_bg, relief="raised", bd=2)
+    left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+    Label(left_frame, text="EVENT LOG", font=header_font, fg=accent_color, bg=card_bg).pack(pady=(10, 5))
+    Label(left_frame, text="Timestamp และสถานะการตรวจจับ", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(pady=(0, 5))
+
+    log_container = Frame(left_frame, bg=card_bg)
+    log_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    log_scrollbar = Scrollbar(log_container, bg=secondary_color)
+    event_log_listbox = Listbox(
+        log_container, font=("Consolas", 10), bg="#1a1a1a", fg=text_color,
+        selectbackground=primary_color, selectforeground=text_color,
+        activestyle="none", height=20, yscrollcommand=log_scrollbar.set
+    )
+    log_scrollbar.config(command=event_log_listbox.yview)
+    event_log_listbox.pack(side="left", fill="both", expand=True)
+    log_scrollbar.pack(side="right", fill="y")
+
+    status_display_label = Label(left_frame, text="WAITING", font=("Segoe UI", 16, "bold"), fg=warning_color, bg=card_bg)
+    status_display_label.pack(pady=(8, 5), padx=10)
+    video_label = Label(left_frame, text="", bg=card_bg, font=("Segoe UI", 10), fg=text_color)  # placeholder for refs
+    video_label.pack(pady=0)
+
+    # Right - Controls
+    right_frame = Frame(main_container, bg=bg_color, width=400)
+    right_frame.pack(side="right", fill="y", padx=(10, 0))
+    right_frame.pack_propagate(False)
+
+    # Status panel
+    status_frame = Frame(right_frame, bg=card_bg, relief="raised", bd=2)
+    status_frame.pack(fill="x", pady=(0, 5))
+    Label(status_frame, text="SYSTEM STATUS", font=("Segoe UI", 10, "bold"), fg=accent_color, bg=card_bg).pack(pady=(5, 3))
+    status_info_frame = Frame(status_frame, bg=card_bg)
+    status_info_frame.pack(pady=(0, 5), padx=10)
+
+    Label(status_info_frame, text="Status:", font=("Segoe UI", 9), fg=text_color, bg=card_bg).pack(anchor="w")
+    status_value_label = Label(status_info_frame, text="WAITING", font=("Segoe UI", 10, "bold"), fg=warning_color, bg=card_bg)
+    status_value_label.pack(anchor="w", pady=(2, 5))
+
+    _update_device_info(status_info_frame, text_color, card_bg, primary_color, success_color, danger_color)
+
+    # Metrics panel - จำนวนครั้ง หลับตา หาว Critical
+    metrics_frame = Frame(right_frame, bg=card_bg, relief="raised", bd=2)
+    metrics_frame.pack(fill="x", pady=(0, 5))
+    Label(metrics_frame, text="DETECTION METRICS", font=("Segoe UI", 10, "bold"), fg=accent_color, bg=card_bg).pack(pady=(5, 3))
+    metrics_grid = Frame(metrics_frame, bg=card_bg)
+    metrics_grid.pack(pady=(0, 5), padx=10, fill="x")
+
+    def create_metric(label_text: str, var_name: str, default_value: str, color: str):
+        row = Frame(metrics_grid, bg=card_bg)
+        row.pack(fill="x", pady=3)
+        Label(row, text=label_text, font=("Segoe UI", 10), fg=text_color, bg=card_bg,
+              anchor="w").pack(side="left")
+        value_label = Label(row, text=default_value, font=("Segoe UI", 14, "bold"),
+                            fg=color, bg=card_bg, anchor="e")
+        value_label.pack(side="right")
+        globals()[var_name] = value_label
+
+    create_metric("หลับตา (ครั้ง):", "blink_value_label", "0", warning_color)
+    create_metric("หาว (ครั้ง):", "yawn_count_value_label", "0", accent_color)
+    create_metric("Critical (ครั้ง):", "doze_value_label", "0", danger_color)
+
+    # Technical values (EAR, MAR) - optional, smaller
+    tech_frame = Frame(metrics_frame, bg=card_bg)
+    tech_frame.pack(pady=(5, 5), padx=10, fill="x")
+    Label(tech_frame, text="EAR:", font=("Segoe UI", 8), fg=text_color, bg=card_bg).pack(side="left")
+    ear_value_label = Label(tech_frame, text="0.000", font=("Segoe UI", 8), fg=primary_color, bg=card_bg)
+    ear_value_label.pack(side="left", padx=(4, 12))
+    Label(tech_frame, text="MAR:", font=("Segoe UI", 8), fg=text_color, bg=card_bg).pack(side="left")
+    yawn_value_label = Label(tech_frame, text="0.00", font=("Segoe UI", 8), fg=primary_color, bg=card_bg)
+    yawn_value_label.pack(side="left", padx=(4, 0))
+
+    # Progress bar
+    progress_frame = Frame(right_frame, bg=card_bg, relief="raised", bd=2)
+    progress_frame.pack(fill="x", pady=(0, 5))
+    Label(progress_frame, text="DROWSINESS LEVEL", font=("Segoe UI", 10, "bold"), fg=accent_color, bg=card_bg).pack(pady=(5, 3))
+
+    style = ttk.Style()
+    style.theme_use('clam')
+    style.configure("Custom.Horizontal.TProgressbar", troughcolor=secondary_color, background=danger_color)
+    progress_bar = ttk.Progressbar(progress_frame, length=350, maximum=100, mode="determinate", style="Custom.Horizontal.TProgressbar")
+    progress_bar.pack(pady=(0, 5))
+
+   #-- auto start video if camera is available
+    if camera_available:
+        root.after(300, start_video)
+    else:
+        status_value_label.config(text="CAMERA NOT AVAILABLE", fg="#F44336")
+
+    # Footer
+    footer_frame = Frame(root, bg=secondary_color, height=30)
+    footer_frame.pack(fill="x", side="bottom")
+    footer_frame.pack_propagate(False)
+    Label(footer_frame, text="Driver Fatigue Detection System v2.0 | Professional Edition | Real-time Detection", 
+          font=("Segoe UI", 8), fg=text_color, bg=secondary_color).pack(expand=True)
+
+    #-- Set GUI references for update functions (headless: status_display_label, event_log_listbox)
+    set_gui_refs({
+        "video_label": video_label,
+        "start_button": start_button,
+        "stop_button": stop_button,
+        "status_value_label": status_value_label,
+        "status_display_label": status_display_label,
+        "progress_bar": progress_bar,
+        "blink_value_label": blink_value_label,
+        "yawn_count_value_label": yawn_count_value_label,
+        "doze_value_label": doze_value_label,
+        "ear_value_label": ear_value_label,
+        "yawn_value_label": yawn_value_label,
+        "event_log_listbox": event_log_listbox,
+        "root": root,
+        "vs": vs,
+        "detector": shared_detector,
+        "camera_available": camera_available,
+    })
+
+    root.mainloop()
