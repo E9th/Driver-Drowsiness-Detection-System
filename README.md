@@ -60,6 +60,12 @@ The **Driver Drowsiness Detection System** is an intelligent solution designed t
 
 The system continuously analyzes driver behavior, detects signs of drowsiness, and triggers alerts to prevent accidents. It provides comprehensive dashboards for both drivers and administrators to monitor fatigue levels, view historical data, and manage alerts.
 
+<div align="center">
+
+<img src="https://github.com/user-attachments/assets/b363d3d3-4c68-495d-b7f9-b6f215b4d071" alt="PRESENTAION CUT VER. (1)" style="max-width:100%; border-radius:8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+
+</div>
+
 ---
 
 ## 🎥 Video Demo
@@ -99,6 +105,18 @@ This demonstration video showcases:
 > 💡 **Click the image above or the button to watch the full demo on YouTube!**
 
 </details>
+
+</div>
+
+<div align="center">
+
+**📹 Demo Video**
+
+[![Watch the Demo on YouTube](https://img.shields.io/badge/▶️-Watch%20on%20YouTube-red?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/GijeTTr6V9Q)
+
+<a href="https://youtu.be/GijeTTr6V9Q" target="_blank">
+  <img src="https://img.youtube.com/vi/GijeTTr6V9Q/maxresdefault.jpg" alt="Driver Drowsiness Detection Demo" style="max-width:100%; border-radius:8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+</a>
 
 </div>
 
@@ -802,4 +820,3 @@ SOFTWARE.
 **⭐ Star this repository if you find it helpful!**
 
 </div>
-  
